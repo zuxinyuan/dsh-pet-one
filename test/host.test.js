@@ -393,3 +393,65 @@ test('bot bridge reports unavailable without DSB', () => {
   assert.equal(view.botBridge.ok, false)
   service.close()
 })
+
+test('createBot degrades when DSB is not mounted', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.ctx = { get: () => undefined }
+  const result = service.createBot({ displayName: '小研' })
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'dsb-unavailable')
+  const view = service.view()
+  assert.equal(view.botCreate.ok, false)
+  assert.match(view.botCreate.line, /Bot 模式没开/)
+  service.close()
+})
+
+test('createBot reuses botharness.creations.create when DSB is present', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let seen = null
+  service.ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return {
+        creations: {
+          create(input, operationKey) {
+            seen = { input, operationKey }
+            return {
+              record: { slug: 'bot-testslug', displayName: input.displayName },
+              channelId: 'channel-dm-1',
+            }
+          },
+        },
+      }
+    },
+  }
+  const result = service.createBot({ displayName: '小研', persona: '你是助手' })
+  assert.equal(result.ok, true)
+  assert.equal(result.botSlug, 'bot-testslug')
+  assert.equal(seen.input.displayName, '小研')
+  assert.equal(seen.input.persona, '你是助手')
+  assert.match(seen.operationKey, /^petone-[a-f0-9]{32}$/)
+  const view = service.view()
+  assert.equal(view.botCreate.ok, true)
+  assert.match(view.botCreate.line, /小研/)
+  service.close()
+})
+
+test('create-bot desktop command is drained into createBot', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.createBot = (input) => {
+    called = input
+    return { ok: true, botSlug: 'bot-x', displayName: input.displayName }
+  }
+  writeFileSync(
+    join(dir, 'commands.json'),
+    JSON.stringify([{ kind: 'create-bot', displayName: '阿福', persona: '温和' }]),
+  )
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { displayName: '阿福', persona: '温和', description: undefined })
+  service.close()
+})

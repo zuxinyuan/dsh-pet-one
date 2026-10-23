@@ -321,6 +321,17 @@ header::after{background-size:200% 100%;animation:sheen 7s linear infinite}
   box-shadow:0 0 16px rgba(232,201,138,.16)}
 .pack.on::after{content:"";position:absolute;right:7px;top:7px;width:5px;height:5px;transform:rotate(45deg);background:var(--gold);box-shadow:0 0 7px var(--gold)}
 
+
+/* create bot */
+.create-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.create-form{display:flex;flex-direction:column;gap:6px;margin:6px 0 10px;padding:8px;border:1px dashed rgba(232,201,138,.35);border-radius:6px;background:rgba(20,16,28,.35)}
+.create-form input,.create-form textarea{
+  width:100%;box-sizing:border-box;background:rgba(0,0,0,.25);border:1px solid rgba(206,184,254,.25);
+  color:#efe8d6;border-radius:4px;padding:6px 8px;font:inherit;font-size:11px;outline:none;
+}
+.create-form textarea{resize:vertical;min-height:54px}
+.create-actions{display:flex;gap:6px;justify-content:flex-end}
+.btn.mini{padding:3px 8px;font-size:10px;letter-spacing:.04em}
 /* bots */
 .bot{
   display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px dashed rgba(206,184,254,.1);
@@ -566,7 +577,18 @@ footer::after{
     <!-- Bot -->
     <section class="panel" data-panel="bots">
       <div class="card gold">
-        <div class="card-title">助手阵容 <span class="hint" id="botHint"></span></div>
+        <div class="create-row">
+          <div class="card-title" style="margin:0">助手阵容 <span class="hint" id="botHint"></span></div>
+          <button class="btn mini" id="createBotBtn" type="button" title="在面板内创建 PersonaBot">创建</button>
+        </div>
+        <div class="create-form" id="createBotForm" hidden>
+          <input id="createBotName" maxlength="64" placeholder="名称，例如：小研" />
+          <textarea id="createBotPersona" maxlength="4000" placeholder="人格设定（可选）。留空则用空白人格。"></textarea>
+          <div class="create-actions">
+            <button class="btn mini" id="createBotCancel" type="button">取消</button>
+            <button class="btn primary mini" id="createBotSubmit" type="button">确认创建</button>
+          </div>
+        </div>
         <div id="botList"></div>
       </div>
       <div class="card">
@@ -584,7 +606,7 @@ footer::after{
         </div>
         <div id="historyList"><div class="empty">读取中…</div></div>
       </div>
-      <div class="memory" style="padding:2px 4px">只读同步自 DeepSeekBot；在「Bot 模式」里创建与编辑。</div>
+      <div class="memory" style="padding:2px 4px">阵容同步自 DeepSeekBot；可在本页「创建」PersonaBot（编辑/渠道仍去 Bot 模式）。</div>
     </section>
   </main>
 
@@ -727,7 +749,7 @@ function render(s) {
   if (!botsState.ok) {
     botList.innerHTML = '<div class="empty">没发现 Bot 模式数据（DeepSeekBot 未安装或未启动）</div>';
   } else if (!(botsState.bots || []).length) {
-    botList.innerHTML = '<div class="empty">还没有 PersonaBot，去 DSH 的「Bot 模式」创建一个</div>';
+    botList.innerHTML = '<div class="empty">还没有 PersonaBot，点右上角「创建」或去 DSH「Bot 模式」</div>';
   } else {
     for (const bot of botsState.bots) {
       const row = document.createElement('div');
@@ -756,6 +778,15 @@ function render(s) {
     }
   }
   $('#botHint').textContent = botsState.ok ? (botsState.bots || []).length + ' 位' : '未连接';
+  const createPulse = s.botCreate;
+  if (createPulse && createPulse.line) {
+    const note = document.createElement('div');
+    note.className = 'memory';
+    note.textContent = createPulse.line;
+    note.style.color = createPulse.ok === false ? '#ffb4b4' : 'var(--gold)';
+    botList.prepend(note);
+  }
+
   $('#scheduleHint').textContent = mySchedules.filter((x) => x.enabled).length + ' 个启用';
 
   // chat target (session vs persona bot)
@@ -840,7 +871,32 @@ function render(s) {
 window.__render = render;
 
 let introTimer = 0;
+
+/* ---------- create PersonaBot (via DSB Cordis, not SQLite) ---------- */
+const createForm = $('#createBotForm');
+$('#createBotBtn')?.addEventListener('click', () => {
+  if (!createForm) return;
+  createForm.hidden = !createForm.hidden;
+  if (!createForm.hidden) $('#createBotName')?.focus();
+});
+$('#createBotCancel')?.addEventListener('click', () => {
+  if (createForm) createForm.hidden = true;
+});
+$('#createBotSubmit')?.addEventListener('click', () => {
+  const name = ($('#createBotName')?.value || '').trim();
+  const persona = ($('#createBotPersona')?.value || '').trim();
+  if (!name) {
+    $('#createBotName')?.focus();
+    return;
+  }
+  post('create-bot', { displayName: name, ...(persona ? { persona } : {}) });
+  if ($('#createBotName')) $('#createBotName').value = '';
+  if ($('#createBotPersona')) $('#createBotPersona').value = '';
+  if (createForm) createForm.hidden = true;
+});
+
 let chatTarget = 'session';
+
 let histExpanded = false;
 function replayIntro() {
   const app = document.querySelector('.app');

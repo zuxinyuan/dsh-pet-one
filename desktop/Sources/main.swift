@@ -236,6 +236,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var baseSize = NSSize(width: 240, height: 240)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 单实例保护：LaunchAgent 的 KeepAlive 与手动 open 可能同时发生。
+        // 检测到已有同 bundle 实例就退出，避免桌面上出现两只。
+        if let bundleId = Bundle.main.bundleIdentifier {
+            let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+                .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+            if !others.isEmpty {
+                NSApp.terminate(nil)
+                return
+            }
+        }
         ensurePetDir()
         prefs = loadPrefs()
         loadArtwork()
@@ -340,6 +350,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.interact(action)
             case "chat":
                 if let text = payload["text"] as? String { self.sendChat(text) }
+            case "create-bot":
+                if let name = payload["displayName"] as? String {
+                    var extra: [String: Any] = ["displayName": name]
+                    if let persona = payload["persona"] as? String, !persona.isEmpty {
+                        extra["persona"] = persona
+                    }
+                    if let description = payload["description"] as? String, !description.isEmpty {
+                        extra["description"] = description
+                    }
+                    self.queueCommand("create-bot", extra: extra)
+                    self.showBubble("正在创建「\(name)」…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
             case "drag":
                 if let dx = payload["dx"] as? Double, let dy = payload["dy"] as? Double {
                     self.movePanel(dx: dx, dy: dy)
@@ -930,6 +953,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "imChannels": snapshot["imChannels"] as? [[String: Any]] ?? [],
             "botHistory": snapshot["botHistory"] as? [[String: Any]] ?? [],
             "botPulse": snapshot["botPulse"] as? [String: Any] ?? NSNull(),
+            "botCreate": snapshot["botCreate"] as? [String: Any] ?? NSNull(),
         ]
     }
 
