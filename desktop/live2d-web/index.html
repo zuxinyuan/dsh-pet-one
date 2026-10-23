@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>鲸鱼娘 Live2D</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
+    -webkit-user-select: none; user-select: none; touch-action: none; }
+  canvas { display: block; width: 100%; height: 100%; background: transparent; }
+  #hint { position: fixed; inset: 0; display: grid; place-items: center;
+    color: rgba(220,230,255,.55); font: 12px/1.6 -apple-system, "PingFang SC", sans-serif;
+    pointer-events: none; opacity: 0; transition: opacity .3s; }
+  #hint.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="hint">Live2D 模型加载中…</div>
+<script src="vendor/live2dcubismcore.min.js"></script>
+<script src="vendor/live2d-vendor.js"></script>
+<script>
+(() => {
+  const hint = document.getElementById('hint');
+  const errors = [];
+  window.addEventListener('error', (e) => errors.push(String(e.message || e)));
+
+  function post(action, payload = {}) {
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.live2d) {
+      window.webkit.messageHandlers.live2d.postMessage({ action, ...payload });
+    }
+  }
+
+  async function boot() {
+    const V = window.__dshLive2dPetVendor;
+    if (!V || !window.Live2DCubismCore) throw new Error('vendor/core missing');
+    V.configureCubismSDK(window.Live2DCubismCore);
+
+    const app = new V.Application();
+    await app.init({
+      backgroundAlpha: 0,
+      resizeTo: window,
+      antialias: true,
+      autoDensity: true,
+      resolution: window.devicePixelRatio || 1,
+    });
+    document.body.appendChild(app.canvas);
+    window.__l2dApp = app;
+
+    const model = await V.Live2DModel.from('model/c_0120.model3.json');
+    app.stage.addChild(model);
+    model.anchor.set(0.5, 1);
+    window.__l2dModel = model;
+
+    const fit = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const scale = Math.min(w / model.width, h / model.height) * 0.98;
+      model.scale.set(scale);
+      model.x = w / 2;
+      model.y = h;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+
+    try { model.motion('Idle'); } catch (e) { errors.push('motion: ' + e.message); }
+    hint.classList.remove('show');
+    window.__l2dState = { ready: true, errors };
+
+    // Mouse gaze (Cubism focus). Failure is non-fatal.
+    window.addEventListener('pointermove', (event) => {
+      try { model.focus(event.clientX, event.clientY); } catch (e) { /* ignore */ }
+    });
+
+    // Drag the native window / click to pat.
+    let drag = null;
+    window.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      drag = { x: event.screenX, y: event.screenY, moved: false };
+    });
+    window.addEventListener('pointermove', (event) => {
+      if (!drag) return;
+      const dx = event.screenX - drag.x;
+      const dy = event.screenY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+      if (drag.moved) {
+        drag.x = event.screenX;
+        drag.y = event.screenY;
+        post('drag', { dx, dy });
+      }
+    });
+    window.addEventListener('pointerup', () => {
+      if (drag && !drag.moved) post('pat');
+      drag = null;
+    });
+    window.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      post('menu');
+    });
+
+    post('ready');
+  }
+
+  boot().catch((error) => {
+    errors.push(String(error && error.stack || error));
+    hint.textContent = 'Live2D 启动失败';
+    hint.classList.add('show');
+    window.__l2dState = { ready: false, errors };
+    post('error', { message: String(error && error.message || error) });
+  });
+})();
+</script>
+</body>
+</html>

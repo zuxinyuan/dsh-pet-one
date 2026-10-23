@@ -1,0 +1,44 @@
+dsh-pet-one
+===========
+
+This project is an independent implementation of a unified DSH desktop pet.
+Its architecture and feature set were informed by the community projects below.
+
+Bundled artwork: `desktop/assets/whale-girl/` is taken from vlln/whale-girl
+(MIT License, Copyright (c) 2026 Sam Gao; illustration credit ZipZipPipe) and
+is redistributed here under the same MIT terms. No source code from the
+projects below is bundled; `desktop/assets/deep-chan/` is kept locally only
+(Personal-Use-Only) and is excluded from the npm `files` whitelist.
+
+- zhu1090093659/dsh-pet (BSD-3-Clause)
+  Plugin bundle shape, session-event vocabulary, affinity/treats/ledger
+  composition, settings and persistence conventions.
+
+- PC2005-cloud/dsh-pet (MIT)
+  Transparent multi-animation pet concept, desktop-window and pet-pack ideas.
+
+- MerZlin/dsh-pet-indesktop (see upstream license)
+  Cross-platform desktop-pet packaging ideas.
+
+- MeteorNOX/DeepSeek-Balance-Whale-Widget (MIT)
+  Balance/usage bubble widget concept.
+
+- hellosz/dsh-pets and Signalight/codex-to-dsh-pet (see upstream licenses)
+  Codex/Petdex spritesheet-atlas interoperability ideas.
+
+- LorisYounger/VPet (Apache-2.0) — virtual-pet interaction design reference.
+
+The default pet artwork is original inline SVG drawn for this project. Imported
+spritesheets remain the property of whoever supplied them.
+
+Live2D assets
+-------------
+`desktop/live2d-web/model/` is the DS 鲸鱼娘 Live2D model redistributed from
+A8Chann/dsh-pet-live2d (`pets/ds-whale-girl`), licensed CC BY-NC-SA 4.0.
+Original character: 上善无形 (溟月); DeepSeek maid redesign: ZipZipPipe;
+Live2D rig/motions/expressions: 氵六青. Non-commercial use only.
+`desktop/live2d-web/vendor/live2d-vendor.js` bundles pixi.js (MIT),
+untitled-pixi-live2d-engine (MIT) and tiny-lru (BSD-3-Clause).
+`live2dcubismcore.min.js` is Live2D Cubism Core (Live2D Proprietary Software
+License), cached locally from the official CDN; it is not part of the npm
+package whitelist and must not be redistributed.

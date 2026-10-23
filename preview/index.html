@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>dsh-pet-one · local preview</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; background: radial-gradient(1200px 600px at 70% 10%, #1d2745, #0c1020 60%); color: #dfe6ff;
+         font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "PingFang SC", sans-serif; }
+  .demo { max-width: 720px; margin: 12vh auto; padding: 0 24px; }
+  .demo h1 { font-size: 20px; margin: 0 0 6px; }
+  .demo p { color: #8ea0c8; margin: 4px 0; }
+  .card { margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid rgba(120,140,200,.18); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  button { padding: 7px 12px; border-radius: 8px; border: 1px solid rgba(120,140,200,.3); background: rgba(120,150,255,.14); color: #e7edff; cursor: pointer; font: inherit; }
+  button:hover { background: rgba(120,150,255,.26); }
+  code { color: #9fd7ff; }
+</style>
+</head>
+<body>
+<div class="demo">
+  <h1>🐋 dsh-pet-one · 本地预览台</h1>
+  <p>这个页面模拟 DSH Web 宿主：假的 <code>__ModuleLoader__</code> + 假的 <code>/api/pet-one/*</code>。右下角就是插件本体。</p>
+  <div class="card">
+    <p>切换 Agent 状态（只影响假宿主返回的 phase）：</p>
+    <div class="row" id="phases"></div>
+    <p style="margin-top:12px">快捷键：拖拽宠物移动 · 单击摸头 · 双击打开面板 · 右键快捷菜单。</p>
+    <p>点「投喂」会消耗零食；「导入精灵图」会走假的导入接口并加一条皮肤。</p>
+  </div>
+</div>
+<script>
+  // ---- fake host state -------------------------------------------------
+  const baseState = {
+    ok: true,
+    phase: 'thinking',
+    line: '正在思考',
+    tool: null,
+    active: [{ id: 's1', phase: 'thinking', line: '正在思考', at: Date.now() }],
+    activeCount: 1,
+    displaySession: 's1',
+    pet: {
+      name: '小鲸', affinity: 46,
+      rank: { name: '熟络', icon: '🫧', min: 40, next: 120, progress: 0.075 },
+      pats: 12, feeds: 3, plays: 1, treats: 18,
+    },
+    display: { visible: true, size: 176, right: 24, bottom: 18, opacity: 1 },
+    sound: true, quiet: false, skin: 'whale',
+    ledger: { day: '2026-10-23', turns: 7, tools: 23, costUsd: 0, sessionsToday: 1 },
+    say: null,
+    skins: [
+      { id: 'whale', name: '小鲸（默认）', kind: 'palette', palette: { body: '#4b7bec', bodyDark: '#3867d6', belly: '#dbe7ff', hair: '#1f2d4d', accent: '#7fe3ff', blush: '#ff9aa2' } },
+      { id: 'sakura', name: '樱花鲸', kind: 'palette', palette: { body: '#ff8fb1', bodyDark: '#e5679a', belly: '#ffe6ee', hair: '#6b2c46', accent: '#ffd6e7', blush: '#ff5d8f' } },
+      { id: 'midnight', name: '午夜鲸', kind: 'palette', palette: { body: '#2f3a6b', bodyDark: '#1f2748', belly: '#aebcff', hair: '#0b1024', accent: '#8b9bff', blush: '#7c5cff' } },
+      { id: 'ghost', name: '幽灵鲸', kind: 'palette', palette: { body: '#c9f2ea', bodyDark: '#9cded2', belly: '#f4fffd', hair: '#2f5d57', accent: '#ffffff', blush: '#ffb3c1' } },
+    ],
+    balance: { ok: true, currency: 'CNY', total: 42.17, granted: 0, topped: 42.17, available: true, at: Date.now() },
+    bounds: { size: [96, 320], opacity: [0.25, 1], right: [-200, 4000], bottom: [-200, 4000] },
+    now: Date.now(),
+  };
+  let state = JSON.parse(JSON.stringify(baseState));
+
+  window.__ModuleLoader__ = {
+    load(definition) { window.__petOneModule = definition.factory((name) => { throw new Error('unknown module ' + name) }); },
+  };
+
+  function json(body) { return Promise.resolve(new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })) }
+
+  const realFetch = window.fetch.bind(window);
+  window.fetch = async (url, options = {}) => {
+    const path = String(url);
+    const method = options.method || 'GET';
+    if (!path.startsWith('/api/pet-one')) return realFetch(url, options);
+    const body = options.body ? JSON.parse(options.body) : {};
+    if (path.endsWith('/state')) return json(state);
+    if (path.endsWith('/interact')) {
+      const reactions = { pat: '咕噜咕噜～', feed: '好次！是小鱼干！', play: '转圈圈！' };
+      if (body.kind === 'feed') state.pet.treats = Math.max(0, state.pet.treats - 1);
+      state.pet.affinity += 1;
+      state.say = { text: reactions[body.kind] || '嗯？', at: Date.now() };
+      return json({ ok: true, delta: 1, reaction: reactions[body.kind] || '嗯？', pet: state.pet });
+    }
+    if (path.endsWith('/config')) {
+      Object.assign(state.display, body.patch || body);
+      if (typeof body.patch?.name === 'string') state.pet.name = body.patch.name;
+      if (typeof body.patch?.skin === 'string') state.skin = body.patch.skin;
+      return json({ ok: true, display: state.display, skin: state.skin, pet: state.pet });
+    }
+    if (path.endsWith('/visible')) { state.display.visible = body.visible !== false; return json({ ok: true, display: state.display }); }
+    if (path.endsWith('/say')) { state.say = { text: body.text, at: Date.now() }; return json({ ok: true, say: state.say }); }
+    if (path.endsWith('/skins/import')) {
+      const skin = { id: 'atlas-' + Date.now(), name: body.name || '导入精灵图', kind: 'atlas', image: '', cols: 8, rows: 9, fps: 6 };
+      state.skins.push(skin); state.skin = skin.id;
+      return json({ ok: true, skin, skins: state.skins });
+    }
+    return json({ ok: false, error: 'not-mocked' });
+  };
+
+  const phases = ['idle', 'waiting', 'thinking', 'tool', 'review', 'done', 'failed'];
+  const labels = { idle: '空闲', waiting: '等待', thinking: '思考', tool: '工具', review: '回复', done: '完成', failed: '出错' };
+  const row = document.getElementById('phases');
+  for (const phase of phases) {
+    const button = document.createElement('button');
+    button.textContent = labels[phase];
+    button.onclick = () => {
+      state.phase = phase;
+      state.line = { idle: '', waiting: '等待模型响应', thinking: '正在思考', tool: '正在使用 shell', review: '整理回复中', done: '完成啦', failed: '工具执行失败' }[phase];
+      state.say = null;
+      window.__petOneRefresh?.();
+    };
+    row.appendChild(button);
+  }
+
+  const script = document.createElement('script');
+  script.src = '../lib/client.js';
+  script.onload = () => { window.__petOneModule.apply({}); window.__petOneRefresh = () => {}; };
+  document.head.appendChild(script);
+</script>
+</body>
+</html>

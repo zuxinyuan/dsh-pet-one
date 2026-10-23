@@ -1,0 +1,6 @@
+# dsh-pet-one bundle patch — inserts the pet row into any profile listing this bundle.
+# One row mounts both halves: the host half (state projection, economy, HTTP API,
+# optional pet_say tool) and the browser half (lib/client.js floating pet).
+- insert:
+    - id: pet-one
+      name: dsh-pet-one

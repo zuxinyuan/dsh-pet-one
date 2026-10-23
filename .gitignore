@@ -1,0 +1,62 @@
+# ---- macOS ----
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# ---- build artifacts ----
+desktop/build/
+desktop/.build/
+*.app/
+*.dSYM/
+*.o
+*.swiftmodule
+
+# ---- node ----
+node_modules/
+.pnpm-store/
+*.log
+npm-debug.log*
+
+# ---- python ----
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# ---- nanobot lab / runtime ----
+.nanobot/
+nanobot-lab/
+.runtime/
+*.pid
+*.sock
+
+# ---- reference material (too heavy, cloned separately) ----
+refs/
+references/
+skeleton/
+
+# ---- third-party licensed assets: not redistributable ----
+# Live2D model (CC BY-NC-SA) and Cubism Core (proprietary) stay local only.
+# Re-create with: ./scripts/fetch-live2d-assets.sh
+desktop/live2d-web/model/
+desktop/live2d-web/vendor/
+desktop/assets/packs/deep-chan/
+
+# ---- local state / secrets ----
+.env
+.env.*
+!.env.example
+*.secret
+config.local.json
+~/.dsh/
+
+# ---- editor ----
+.idea/
+.vscode/
+*.swp

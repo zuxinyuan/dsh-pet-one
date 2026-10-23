@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>鲸鱼娘 · 星轨终端</title>
+<style>
+/* ------------------------------------------------------------------
+   星穹铁道风格面板（深靛星海 + 鎏金边框 + 棱角裁切）
+   设计参考：miHoYo Game UI 风格指南（Curio）
+   https://designbycurio.com/zh/learn/mihoyo-genshin-ui-2024
+   星铁展示页复刻（GMCY2020/Reprint-StarRail-3.2）取色：#0b1636 #1c1c33 #475297 #ceb8fe #ffcf70
+   玻璃卡片基底改造自 Uiverse.io by elijahgummer (glassmorphism)
+   按钮高光/内阴影改造自 Uiverse.io by Uncannypotato69 (soft press)
+   ------------------------------------------------------------------ */
+:root{
+  --bg0:#060a14; --bg1:#0b1636; --bg2:#0f1c3d;
+  --panel:rgba(16,26,51,.72); --panel-solid:#101a33;
+  --gold:#e8c98a; --gold-2:#c9a35c; --gold-dim:rgba(232,201,138,.28);
+  --lav:#ceb8fe; --peri:#7c86c9; --cyan:#8fd9ff;
+  --text:#f3efe4; --muted:#96a0bd; --line:rgba(206,184,254,.16);
+  --good:#8ee6b0; --bad:#ff8fa3;
+  --r:2px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:transparent;overflow:hidden}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  color:var(--text);font-size:12px;-webkit-font-smoothing:antialiased;user-select:none;
+}
+button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer}
+input{font-family:inherit}
+
+/* ---------- canvas ---------- */
+.app{
+  position:relative;width:100%;height:100%;display:flex;flex-direction:column;
+  background:
+    radial-gradient(120% 80% at 78% -18%, rgba(71,82,151,.55) 0%, rgba(71,82,151,0) 58%),
+    radial-gradient(90% 60% at -10% 112%, rgba(92,71,140,.5) 0%, rgba(92,71,140,0) 60%),
+    linear-gradient(158deg,#060a14 0%,#0a1430 48%,#0b1636 100%);
+  border:1px solid rgba(232,201,138,.34);
+  box-shadow:inset 0 0 0 1px rgba(6,10,20,.8), inset 0 0 60px rgba(0,0,0,.55);
+  overflow:hidden;
+}
+/* star specks + faint astral grid */
+.app::before{
+  content:"";position:absolute;inset:0;pointer-events:none;opacity:.7;
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,.9) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 78% 12%, rgba(206,184,254,.9) 50%, transparent 51%),
+    radial-gradient(1px 1px at 64% 32%, rgba(255,255,255,.7) 50%, transparent 51%),
+    radial-gradient(1px 1px at 32% 64%, rgba(143,217,255,.8) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 88% 74%, rgba(232,201,138,.8) 50%, transparent 51%),
+    radial-gradient(1px 1px at 8% 84%, rgba(255,255,255,.6) 50%, transparent 51%),
+    radial-gradient(1px 1px at 46% 8%, rgba(255,255,255,.6) 50%, transparent 51%),
+    radial-gradient(1px 1px at 70% 90%, rgba(206,184,254,.7) 50%, transparent 51%);
+}
+.app::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg, rgba(255,255,255,.014) 0 1px, transparent 1px 3px);
+  mix-blend-mode:screen;
+}
+/* corner brackets: structural, not decoration */
+.corner{position:absolute;width:18px;height:18px;pointer-events:none;z-index:3}
+.corner::before,.corner::after{content:"";position:absolute;background:var(--gold);opacity:.85}
+.corner::before{width:18px;height:1px}
+.corner::after{width:1px;height:18px}
+.corner.tl{left:6px;top:6px}
+.corner.tr{right:6px;top:6px;transform:scaleX(-1)}
+.corner.bl{left:6px;bottom:6px;transform:scaleY(-1)}
+.corner.br{right:6px;bottom:6px;transform:scale(-1,-1)}
+
+/* ---------- header ---------- */
+header{
+  position:relative;z-index:4;display:flex;align-items:center;gap:10px;
+  padding:16px 18px 10px;
+}
+.emblem{position:relative;width:26px;height:26px;flex:0 0 auto}
+.emblem::before{
+  content:"";position:absolute;inset:5px;transform:rotate(45deg);
+  border:1px solid var(--gold);box-shadow:0 0 12px rgba(232,201,138,.45), inset 0 0 8px rgba(232,201,138,.35);
+}
+.emblem::after{
+  content:"";position:absolute;inset:10px;transform:rotate(45deg);
+  background:var(--gold);box-shadow:0 0 10px var(--gold);
+}
+header::after{
+  content:"";position:absolute;left:18px;right:18px;bottom:-1px;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(232,201,138,.25) 18%,rgba(232,201,138,.85) 50%,rgba(232,201,138,.25) 82%,transparent);
+}
+header::before{
+  content:"";position:absolute;left:50%;bottom:-4px;width:6px;height:6px;transform:translateX(-50%) rotate(45deg);
+  background:var(--gold);box-shadow:0 0 9px var(--gold);z-index:2;
+}
+.ident{flex:1;min-width:0}
+.ident h1{
+  margin:0;font-family:"Songti SC","STSong","Noto Serif SC",serif;font-weight:600;
+  font-size:17px;letter-spacing:.14em;line-height:1.1;color:#fff8e8;
+  text-shadow:0 0 18px rgba(232,201,138,.28);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.ident p{
+  margin:4px 0 0;font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);
+}
+.ident p b{color:var(--gold);font-weight:600}
+.close{
+  width:24px;height:24px;border:1px solid var(--line);color:var(--muted);
+  font-size:11px;line-height:1;display:grid;place-items:center;
+  clip-path:polygon(0 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%);
+}
+.close:hover{color:var(--gold);border-color:var(--gold-dim);background:rgba(232,201,138,.08)}
+
+/* ---------- tabs ---------- */
+.tabs{
+  position:relative;z-index:4;display:flex;gap:2px;padding:0 14px;
+  border-bottom:1px solid var(--line);
+}
+.tabs button{
+  position:relative;padding:9px 14px 10px;font-size:11px;letter-spacing:.18em;color:var(--muted);
+  transition:color .18s;
+}
+.tabs button::after{
+  content:"";position:absolute;left:14px;right:14px;bottom:-1px;height:1px;background:transparent;
+}
+.tabs button.active{
+  color:#fff6df;
+  background:linear-gradient(180deg,rgba(232,201,138,.14),rgba(232,201,138,0));
+  clip-path:polygon(0 0,100% 0,100% calc(100% - 4px),calc(100% - 4px) 100%,0 100%);
+}
+.tabs button.active::after{
+  background:linear-gradient(90deg,transparent,var(--gold),transparent);
+  box-shadow:0 0 10px rgba(232,201,138,.7);
+}
+.tabs button.active::before{
+  content:"";position:absolute;left:50%;top:2px;width:4px;height:4px;transform:translateX(-50%) rotate(45deg);
+  background:var(--gold);box-shadow:0 0 6px var(--gold);
+}
+
+/* ---------- scroll area ---------- */
+main{position:relative;z-index:4;flex:1;min-height:0;overflow-y:auto;padding:12px 14px 6px;scrollbar-width:thin}
+main::-webkit-scrollbar{width:5px}
+main::-webkit-scrollbar-thumb{background:rgba(232,201,138,.28);border-radius:2px}
+.panel{display:none;animation:fade .22s ease}
+.panel.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes sheen{0%{background-position:-160% 0}100%{background-position:260% 0}}
+header::after{background-size:200% 100%;animation:sheen 7s linear infinite}
+@media (prefers-reduced-motion: reduce){header::after{animation:none}}
+
+/* ---------- cards (Uiverse glass base, HSR-ified) ---------- */
+.card{
+  position:relative;padding:12px 13px;margin-bottom:9px;
+  background-image:
+    linear-gradient(160deg,rgba(23,34,66,.82),rgba(11,19,38,.78)),
+    linear-gradient(rgba(232,201,138,.55),rgba(232,201,138,.55)),
+    linear-gradient(rgba(232,201,138,.55),rgba(232,201,138,.55)),
+    linear-gradient(rgba(232,201,138,.35),rgba(232,201,138,.35)),
+    linear-gradient(rgba(232,201,138,.35),rgba(232,201,138,.35));
+  background-size:100% 100%, 9px 1px, 1px 9px, 9px 1px, 1px 9px;
+  background-position:0 0, left top, left top, right bottom, right bottom;
+  background-repeat:no-repeat;
+  border:1px solid rgba(206,184,254,.14);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+}
+.card::before{
+  content:"";position:absolute;left:0;top:10px;bottom:10px;width:1px;
+  background:linear-gradient(180deg,transparent,var(--gold),transparent);opacity:.55;
+}
+.card.gold{border-color:rgba(232,201,138,.34)}
+.card.gold::after{
+  content:"";position:absolute;right:8px;top:8px;width:5px;height:5px;transform:rotate(45deg);
+  background:var(--gold);box-shadow:0 0 8px var(--gold);
+}
+.card-title{
+  display:flex;align-items:center;gap:7px;margin-bottom:8px;
+  font-size:9px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);
+}
+.card-title::before{content:"";width:5px;height:5px;transform:rotate(45deg);background:var(--gold);box-shadow:0 0 7px var(--gold)}
+.card-title .hint{margin-left:auto;color:var(--muted);letter-spacing:.1em;text-transform:none;font-size:10px}
+
+/* phase */
+.phase{display:flex;align-items:center;gap:9px;margin-bottom:2px}
+.phase .dot{
+  width:7px;height:7px;border-radius:50%;background:var(--peri);box-shadow:0 0 10px var(--peri);
+}
+.phase[data-phase="thinking"] .dot{background:var(--lav);box-shadow:0 0 12px var(--lav);animation:pulse 1.4s infinite}
+.phase[data-phase="tool"] .dot{background:var(--cyan);box-shadow:0 0 12px var(--cyan)}
+.phase[data-phase="done"] .dot{background:var(--good);box-shadow:0 0 12px var(--good)}
+.phase[data-phase="failed"] .dot{background:var(--bad);box-shadow:0 0 12px var(--bad)}
+.phase[data-phase="waiting"] .dot{background:var(--gold);box-shadow:0 0 10px var(--gold)}
+@keyframes pulse{50%{opacity:.35;transform:scale(.8)}}
+.phase b{font-size:13px;letter-spacing:.06em;font-weight:600}
+.phase span{margin-left:auto;font-size:10px;color:var(--muted)}
+.phase-line{margin:6px 0 0;color:var(--muted);font-size:11px;line-height:1.5;min-height:16px}
+
+/* level + affinity */
+.level-row{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+.level-badge{
+  font-family:"DIN Alternate","Avenir Next Condensed","Helvetica Neue",sans-serif;
+  font-size:22px;font-weight:700;letter-spacing:.02em;color:var(--gold);
+  text-shadow:0 0 16px rgba(232,201,138,.35);line-height:1;
+}
+.level-title{font-family:"Songti SC","STSong",serif;font-size:13px;letter-spacing:.12em;color:#fff5dd}
+.level-points{margin-left:auto;font-family:"DIN Alternate",sans-serif;font-size:11px;color:var(--muted)}
+.bar{position:relative;height:6px;background:rgba(255,255,255,.06);
+  border:1px solid rgba(206,184,254,.12);box-shadow:inset 0 1px 3px rgba(0,0,0,.45)}
+.bar i{
+  display:block;height:100%;background:linear-gradient(90deg,#7d6231,var(--gold) 70%,#f7e4b8);
+  box-shadow:0 0 12px rgba(232,201,138,.55);transition:width .45s ease;
+}
+.bar::after{
+  content:"";position:absolute;right:-5px;top:-3px;width:10px;height:10px;transform:rotate(45deg);
+  border:1px solid var(--gold);background:rgba(6,10,20,.95);box-shadow:0 0 8px rgba(232,201,138,.5);
+}
+
+/* stat grid */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.stat{
+  position:relative;padding:8px 9px;background:rgba(255,255,255,.035);
+  border:1px solid rgba(206,184,254,.1);
+  clip-path:polygon(0 0,calc(100% - 6px) 0,100% 6px,100% 100%,0 100%);
+}
+.stat label{display:block;font-size:9px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase}
+.stat b{
+  display:block;margin-top:3px;font-family:"DIN Alternate","Avenir Next Condensed",sans-serif;
+  font-size:15px;font-weight:600;color:#fff7e7;letter-spacing:.02em;
+}
+.stat b.small{font-size:12px}
+.stat em{font-style:normal;font-size:9px;color:var(--muted);margin-left:2px}
+
+/* quests */
+.quest{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed rgba(206,184,254,.1)}
+.quest:last-child{border-bottom:0}
+.quest .mark{width:9px;height:9px;transform:rotate(45deg);border:1px solid var(--muted);flex:0 0 auto}
+.quest.done .mark{background:var(--gold);border-color:var(--gold);box-shadow:0 0 8px rgba(232,201,138,.7)}
+.quest .name{flex:1;font-size:11px;color:#e9e4d6}
+.quest .ticks{display:flex;gap:2px}
+.quest .ticks i{width:7px;height:3px;background:rgba(255,255,255,.12)}
+.quest .ticks i.on{background:var(--gold);box-shadow:0 0 5px rgba(232,201,138,.7)}
+.quest .reward{font-size:10px;color:var(--gold);min-width:34px;text-align:right}
+
+/* achievements */
+.ach{display:flex;align-items:center;gap:7px;padding:5px 0;font-size:11px;color:var(--muted)}
+.ach .mark{width:8px;height:8px;transform:rotate(45deg);border:1px solid rgba(255,255,255,.2);flex:0 0 auto}
+.ach.on{color:#efe8d6}
+.ach.on .mark{background:var(--gold);border-color:var(--gold);box-shadow:0 0 7px rgba(232,201,138,.65)}
+.ach .desc{margin-left:auto;font-size:9px;color:var(--muted);max-width:48%;text-align:right;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* memories */
+.memory{display:flex;gap:7px;padding:4px 0;font-size:11px;color:#c9cede;line-height:1.45}
+.memory::before{content:"◆";color:var(--gold);font-size:7px;line-height:1.8}
+
+/* buttons */
+.btn{
+  position:relative;overflow:hidden;padding:8px 10px;font-size:11px;letter-spacing:.1em;
+  background:linear-gradient(180deg,rgba(32,44,82,.9),rgba(14,23,46,.9));
+  border:1px solid rgba(232,201,138,.26);color:#eadfc6;
+  clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,7px 100%,0 calc(100% - 7px));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 2px 10px rgba(0,0,0,.35);
+  transition:border-color .15s,box-shadow .15s,transform .1s;
+}
+.btn::before{
+  content:"";position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .25s;
+  background-image:
+    radial-gradient(circle at 12px 8px, rgba(255,232,180,.95) 0 .9px, transparent 1.4px),
+    radial-gradient(circle at 28px 18px, rgba(255,232,180,.8) 0 .8px, transparent 1.3px),
+    radial-gradient(circle at 40px 6px, rgba(255,255,255,.9) 0 .7px, transparent 1.2px);
+  background-size:48px 24px, 56px 26px, 40px 22px;
+  animation: sparkle 3.4s linear infinite;
+}
+.btn::after{
+  content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;pointer-events:none;
+  background:linear-gradient(100deg,transparent,rgba(255,246,222,.5),transparent);
+  transform:skewX(-18deg);transition:left .55s ease;
+}
+.btn:hover{border-color:var(--gold);box-shadow:0 0 18px rgba(232,201,138,.3),inset 0 1px 0 rgba(255,255,255,.14)}
+.btn:hover::before{opacity:.75}
+.btn:hover::after{left:130%}
+.btn:focus-visible{outline:1px solid var(--gold);outline-offset:1px}
+@keyframes sparkle{to{background-position:48px 24px, -56px 26px, 40px -22px}}
+@media (prefers-reduced-motion: reduce){
+  .btn::before,.btn::after{animation:none;transition:none}
+}
+.btn:active{transform:translateY(1px)}
+.btn.primary{
+  background:linear-gradient(180deg,#f0d69c,#c9a35c);color:#241b0c;font-weight:700;
+  border-color:#f4e2b4;box-shadow:0 0 18px rgba(232,201,138,.35),inset 0 1px 0 rgba(255,255,255,.6);
+}
+.btn.primary:hover{box-shadow:0 0 24px rgba(232,201,138,.55)}
+.btn.on{border-color:var(--good);color:#d9ffe7;box-shadow:0 0 12px rgba(142,230,176,.25)}
+.btn-row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:2px}
+
+/* tools */
+.tool{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed rgba(206,184,254,.1)}
+.tool:last-child{border-bottom:0}
+.tool .ico{
+  width:28px;height:28px;display:grid;place-items:center;border:1px solid var(--gold-dim);
+  background:rgba(232,201,138,.05);flex:0 0 auto;
+  clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,7px 100%,0 calc(100% - 7px));
+}
+.tool .ico svg{width:14px;height:14px;stroke:var(--gold);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.tool .body{flex:1;min-width:0}
+.tool .body b{display:block;font-size:11.5px;font-weight:600;color:#efe8d6;letter-spacing:.04em}
+.tool .body span{display:block;font-size:9.5px;color:var(--muted);margin-top:2px}
+.tool .btn{padding:6px 10px;font-size:10px;flex:0 0 auto}
+.countdown{font-family:"DIN Alternate",sans-serif;color:var(--gold);font-size:12px}
+
+/* packs */
+.packs{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.pack{
+  padding:9px;border:1px solid rgba(206,184,254,.14);background:rgba(255,255,255,.03);
+  text-align:left;position:relative;
+  clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%);
+}
+.pack b{display:block;font-size:11.5px;color:#efe8d6}
+.pack span{display:block;font-size:9px;color:var(--muted);margin-top:3px}
+.pack.on{border-color:var(--gold);background:linear-gradient(160deg,rgba(232,201,138,.14),rgba(20,30,58,.6));
+  box-shadow:0 0 16px rgba(232,201,138,.16)}
+.pack.on::after{content:"";position:absolute;right:7px;top:7px;width:5px;height:5px;transform:rotate(45deg);background:var(--gold);box-shadow:0 0 7px var(--gold)}
+
+/* chat */
+footer{
+  position:relative;z-index:4;display:flex;gap:6px;align-items:center;
+  padding:10px 14px 14px;border-top:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(6,10,20,0),rgba(6,10,20,.55));
+}
+footer input{
+  flex:1;min-width:0;padding:9px 11px;font-size:11.5px;color:var(--text);outline:none;
+  background:rgba(255,255,255,.04);border:1px solid rgba(206,184,254,.18);
+  clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,0 100%);
+}
+footer input::placeholder{color:#6f7a97}
+footer input:focus{border-color:var(--gold-dim);box-shadow:0 0 14px rgba(232,201,138,.16) inset}
+footer .send{padding:9px 16px;font-size:11px;letter-spacing:.16em}
+footer::before{
+  content:"";position:absolute;left:18px;right:18px;top:-1px;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(232,201,138,.22) 18%,rgba(232,201,138,.75) 50%,rgba(232,201,138,.22) 82%,transparent);
+}
+footer::after{
+  content:"";position:absolute;left:50%;top:-4px;width:5px;height:5px;transform:translateX(-50%) rotate(45deg);
+  background:var(--gold);box-shadow:0 0 8px var(--gold);
+}
+.pending{position:absolute;left:16px;top:-9px;font-size:9px;color:var(--gold);letter-spacing:.12em}
+
+/* intro: scan line + star streaks (replayed each time the panel opens) */
+.intro-layer{position:absolute;inset:0;z-index:9;pointer-events:none;overflow:hidden}
+.intro-layer .scan{
+  position:absolute;left:-10%;right:-10%;top:-6px;height:2px;opacity:0;
+  background:linear-gradient(90deg,transparent,rgba(232,201,138,.95) 35%,#fff6df 50%,rgba(232,201,138,.95) 65%,transparent);
+  box-shadow:0 0 22px rgba(232,201,138,.85),0 0 60px rgba(232,201,138,.35);
+}
+.intro-layer .scan.alt{
+  height:1px;background:linear-gradient(90deg,transparent,rgba(206,184,254,.8),transparent);
+  box-shadow:0 0 18px rgba(206,184,254,.6);
+}
+.intro-layer .streak{
+  position:absolute;height:1px;width:46%;opacity:0;
+  background:linear-gradient(90deg,transparent,rgba(232,201,138,.9),rgba(255,246,222,.95),transparent);
+}
+.intro-layer .streak.lav{background:linear-gradient(90deg,transparent,rgba(206,184,254,.85),transparent)}
+.app.intro .scan{animation:scanY 1.05s cubic-bezier(.22,.7,.3,1) forwards}
+.app.intro .scan.alt{animation:scanY 1.25s .08s cubic-bezier(.22,.7,.3,1) forwards}
+.app.intro .streak{animation:streakX 1.05s cubic-bezier(.2,.7,.3,1) forwards}
+.app.intro header,.app.intro .tabs,.app.intro main,.app.intro footer{animation:riseIn .5s ease both}
+.app.intro .tabs{animation-delay:.06s}
+.app.intro main{animation-delay:.12s}
+.app.intro footer{animation-delay:.18s}
+@keyframes scanY{0%{top:-6px;opacity:0}10%{opacity:1}85%{opacity:.9}100%{top:102%;opacity:0}}
+@keyframes streakX{0%{opacity:0;transform:translateX(-30%)}20%{opacity:.95}100%{opacity:0;transform:translateX(120%)}}
+@keyframes riseIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){
+  .app.intro *{animation:none !important}
+}
+
+/* misc */
+.empty{color:var(--muted);font-size:11px;padding:4px 0}
+.fade-in{animation:fade .25s ease}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+
+  <div class="intro-layer" aria-hidden="true">
+    <div class="scan"></div>
+    <div class="scan alt"></div>
+    <div class="streak" style="top:18%;left:-46%"></div>
+    <div class="streak lav" style="top:31%;left:-46%;animation-delay:.05s"></div>
+    <div class="streak" style="top:46%;left:-46%;animation-delay:.1s"></div>
+    <div class="streak lav" style="top:58%;left:-46%;animation-delay:.14s"></div>
+    <div class="streak" style="top:71%;left:-46%;animation-delay:.18s"></div>
+    <div class="streak lav" style="top:84%;left:-46%;animation-delay:.22s"></div>
+  </div>
+
+  <header>
+    <div class="emblem"></div>
+    <div class="ident">
+      <h1 id="petName">鲸鱼娘</h1>
+      <p>ASTRAL COMPANION · <b id="levelText">LV.1 初见</b></p>
+    </div>
+    <button class="close" data-action="close" title="关闭">✕</button>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="status" class="active">状态</button>
+    <button data-tab="grow">养成</button>
+    <button data-tab="tools">工具</button>
+    <button data-tab="packs">角色</button>
+  </nav>
+
+  <main id="main">
+    <!-- 状态 -->
+    <section class="panel active" data-panel="status">
+      <div class="card gold">
+        <div class="phase" id="phaseBox">
+          <i class="dot"></i><b id="phaseText">空闲</b><span id="sessionText">0 个会话</span>
+        </div>
+        <p class="phase-line" id="phaseLine">等待新的星轨讯号…</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">羁绊 <span class="hint" id="affText">0 / 40</span></div>
+        <div class="level-row">
+          <div class="level-badge" id="levelNum">01</div>
+          <div class="level-title" id="levelTitle">初见</div>
+          <div class="level-points">好感 <b id="affinity">0</b></div>
+        </div>
+        <div class="bar"><i id="affBar" style="width:0%"></i></div>
+      </div>
+
+      <div class="grid">
+        <div class="stat"><label>零食</label><b id="treats">20</b></div>
+        <div class="stat"><label>今日回合</label><b id="turns">0</b></div>
+        <div class="stat"><label>今日工具</label><b id="tools">0</b></div>
+        <div class="stat"><label>上下文</label><b class="small" id="context">0</b></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">今日 Token</div>
+        <div class="grid">
+          <div class="stat"><label>输入</label><b class="small" id="tokIn">0</b></div>
+          <div class="stat"><label>输出</label><b class="small" id="tokOut">0</b></div>
+          <div class="stat"><label>缓存读取</label><b class="small" id="tokCache">0</b></div>
+          <div class="stat"><label>DeepSeek 余额</label><b class="small" id="balance">—</b></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 养成 -->
+    <section class="panel" data-panel="grow">
+      <div class="card gold">
+        <div class="card-title">每日任务 <span class="hint" id="questHint"></span></div>
+        <div id="quests"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">成就 <span class="hint" id="achHint">0 / 12</span></div>
+        <div id="achievements"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">记忆片段</div>
+        <div id="memories"><div class="empty">还没有记忆，多陪陪她。</div></div>
+      </div>
+    </section>
+
+    <!-- 工具 -->
+    <section class="panel" data-panel="tools">
+      <div class="card">
+        <div class="card-title">专注与提醒</div>
+        <div class="tool">
+          <div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 3h6"/></svg></div>
+          <div class="body"><b>番茄钟</b><span id="pomoHint">25 分钟专注</span></div>
+          <button class="btn" id="pomoBtn" data-action="pomodoro">开始</button>
+        </div>
+        <div class="tool">
+          <div class="ico"><svg viewBox="0 0 24 24"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6Z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg></div>
+          <div class="body"><b>闹钟</b><span>到点她会在桌面上叫你</span></div>
+          <button class="btn" data-action="alarm">设置</button>
+        </div>
+        <div class="tool">
+          <div class="ico"><svg viewBox="0 0 24 24"><path d="M5 4h10l4 4v12H5z"/><path d="M9 12h6M9 16h6"/></svg></div>
+          <div class="body"><b>便签</b><span>本地保存到 notes.md</span></div>
+          <button class="btn" data-action="notes">打开</button>
+        </div>
+        <div class="tool">
+          <div class="ico"><svg viewBox="0 0 24 24"><path d="M4 10v4h3l4 3V7L7 10H4Z"/><path d="M15 9a4 4 0 0 1 0 6"/></svg></div>
+          <div class="body"><b>语音</b><span id="voiceHint">edge-tts · 失败回退 say</span></div>
+          <button class="btn" id="voiceBtn" data-action="voice">开</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">形象与扩展</div>
+        <div class="tool">
+          <div class="ico"><svg viewBox="0 0 24 24"><path d="M3 12c4-5 9-5 13-1l4-3v8l-4-3c-4 4-9 4-13-1Z"/><circle cx="8" cy="11" r=".8"/></svg></div>
+          <div class="body"><b>Live2D 形态</b><span id="live2dHint">两种形态互斥，切换后精灵图让位</span></div>
+          <button class="btn" id="live2dBtn" data-action="live2d">切换</button>
+        </div>
+        <div class="tool">
+          <div class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14"/><circle cx="9" cy="10" r="1.4"/><path d="m4 17 5-4 4 3 3-2 4 3"/></svg></div>
+          <div class="body"><b>导入精灵图</b><span>8×9 Codex / Petdex 图集</span></div>
+          <button class="btn" data-action="import">选择</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 角色 -->
+    <section class="panel" data-panel="packs">
+      <div class="card gold">
+        <div class="card-title">角色档案 <span class="hint" id="packHint"></span></div>
+        <div class="packs" id="packs"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">形态说明</div>
+        <div class="memory">角色包来自桌面端 assets/packs 与 ~/.dsh/pet-one/packs。</div>
+        <div class="memory">Live2D 由独立桌面端进程渲染，可用「Live2D 形态」启动。</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="pending" id="pending" hidden>讯息已发出，等待星轨回响…</div>
+    <input id="chatInput" maxlength="500" placeholder="向星轨发送讯息…">
+    <button class="btn primary send" id="sendBtn">发送</button>
+  </footer>
+</div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => [...document.querySelectorAll(sel)];
+
+/* ---------- preview mock (Swift injects real state) ---------- */
+let state = {
+  phase: 'thinking', phaseLabel: '思考中', line: '正在思考', active: 2,
+  pet: { name: '鲸鱼娘', level: 3, title: '伙伴', affinity: 142, next: 300, progress: 0.12,
+         treats: 18, pats: 23, feeds: 6, plays: 3 },
+  ledger: { turns: 7, tools: 23, calls: 31, tokensIn: 12345, tokensOut: 4567, cacheRead: 422144, context: 422783 },
+  balance: { ok: true, total: 42.17, currency: 'CNY' },
+  quests: [
+    { name: '摸摸 5 次', progress: 5, target: 5, reward: 5, done: true },
+    { name: '投喂 2 次', progress: 1, target: 2, reward: 3, done: false },
+    { name: '完成 3 个回合', progress: 3, target: 3, reward: 5, done: true }
+  ],
+  achievements: { unlocked: 1, total: 12, items: [
+    { name: '第一次摸头', desc: '摸头 1 次', unlocked: true },
+    { name: '摸头达人', desc: '累计 50 次', unlocked: false },
+    { name: '十个回合', desc: '完成 10 个回合', unlocked: false }
+  ]},
+  memories: [{ text: '升到 Lv.3「伙伴」' }, { text: '解锁成就「第一次摸头」' }],
+  packs: [{ id: 'whale-girl', name: '鲸鱼娘' }, { id: 'deep-chan', name: 'deep酱' }],
+  packId: 'whale-girl',
+  chat: { pending: false },
+  pomodoro: null,
+  voice: true
+};
+
+function fmt(n) {
+  n = Number(n || 0);
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return String(n);
+}
+
+function post(action, payload = {}) {
+  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.pet) {
+    window.webkit.messageHandlers.pet.postMessage({ action, ...payload });
+  } else if (window.__previewAction) {
+    window.__previewAction(action, payload);
+  }
+}
+
+function render(s) {
+  state = s;
+  $('#petName').textContent = s.pet.name || '鲸鱼娘';
+  $('#levelText').textContent = 'LV.' + (s.pet.level || 1) + ' ' + (s.pet.title || '初见');
+  $('#phaseBox').dataset.phase = s.phase;
+  $('#phaseText').textContent = s.phaseLabel || '空闲';
+  $('#sessionText').textContent = (s.active || 0) + ' 个会话';
+  $('#phaseLine').textContent = s.line || (s.active ? '处理中…' : '等待新的星轨讯号…');
+
+  $('#levelNum').textContent = String(s.pet.level || 1).padStart(2, '0');
+  $('#levelTitle').textContent = s.pet.title || '初见';
+  $('#affinity').textContent = s.pet.affinity || 0;
+  $('#affText').textContent = (s.pet.affinity || 0) + ' / ' + (s.pet.next || 'MAX');
+  $('#affBar').style.width = Math.round((s.pet.progress || 0) * 100) + '%';
+  $('#treats').textContent = s.pet.treats ?? 0;
+  $('#turns').textContent = s.ledger.turns || 0;
+  $('#tools').textContent = s.ledger.tools || 0;
+  $('#context').textContent = fmt(s.ledger.context);
+  $('#tokIn').textContent = fmt(s.ledger.tokensIn);
+  $('#tokOut').textContent = fmt(s.ledger.tokensOut);
+  $('#tokCache').textContent = fmt(s.ledger.cacheRead);
+  $('#balance').textContent = s.balance && s.balance.ok
+    ? (Number(s.balance.total).toFixed(2) + ' ' + s.balance.currency)
+    : '—';
+
+  // quests
+  const q = $('#quests');
+  q.innerHTML = '';
+  (s.quests || []).forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'quest' + (item.done ? ' done' : '');
+    const ticks = Array.from({ length: item.target }, (_, i) =>
+      `<i class="${i < item.progress ? 'on' : ''}"></i>`).join('');
+    row.innerHTML = `<span class="mark"></span><span class="name">${item.name}</span>
+      <span class="ticks">${ticks}</span><span class="reward">+${item.reward}</span>`;
+    q.appendChild(row);
+  });
+  if (!(s.quests || []).length) q.innerHTML = '<div class="empty">今天还没有任务</div>';
+  const doneCount = (s.quests || []).filter((x) => x.done).length;
+  $('#questHint').textContent = doneCount + ' / ' + (s.quests || []).length;
+
+  // achievements
+  const a = $('#achievements');
+  a.innerHTML = '';
+  const ach = s.achievements || { unlocked: 0, total: 0, items: [] };
+  $('#achHint').textContent = ach.unlocked + ' / ' + ach.total;
+  (ach.items || []).forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'ach' + (item.unlocked ? ' on' : '');
+    row.innerHTML = `<span class="mark"></span><span>${item.name}</span><span class="desc">${item.desc}</span>`;
+    a.appendChild(row);
+  });
+
+  // memories
+  const m = $('#memories');
+  m.innerHTML = '';
+  (s.memories || []).slice(0, 6).forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'memory';
+    row.textContent = item.text;
+    m.appendChild(row);
+  });
+  if (!(s.memories || []).length) m.innerHTML = '<div class="empty">还没有记忆，多陪陪她。</div>';
+
+  // packs
+  const p = $('#packs');
+  p.innerHTML = '';
+  (s.packs || []).forEach((pack) => {
+    const btn = document.createElement('button');
+    btn.className = 'pack' + (pack.id === s.packId ? ' on' : '');
+    btn.innerHTML = `<b>${pack.name}</b><span>${pack.id}</span>`;
+    btn.onclick = () => post('pack', { id: pack.id });
+    p.appendChild(btn);
+  });
+  $('#packHint').textContent = s.packId || '';
+
+  // tools state
+  const live2d = !!s.live2d;
+  $('#live2dBtn').textContent = live2d ? '切回' : '切换';
+  $('#live2dBtn').classList.toggle('on', live2d);
+  $('#live2dHint').textContent = live2d ? 'Live2D 正在桌面上，精灵图已让位' : '两种形态互斥，切换后精灵图让位';
+  $('#voiceBtn').textContent = s.voice ? '开' : '关';
+  $('#voiceBtn').classList.toggle('on', !!s.voice);
+  if (s.pomodoro != null) {
+    const left = Math.max(0, Math.round(s.pomodoro));
+    $('#pomoHint').innerHTML = '剩余 <span class="countdown">' +
+      String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0') + '</span>';
+    $('#pomoBtn').textContent = '取消';
+  } else {
+    $('#pomoHint').textContent = '25 分钟专注';
+    $('#pomoBtn').textContent = '开始';
+  }
+
+  // chat
+  $('#pending').hidden = !(s.chat && s.chat.pending);
+}
+
+window.__render = render;
+
+let introTimer = 0;
+function replayIntro() {
+  const app = document.querySelector('.app');
+  app.classList.remove('intro');
+  void app.offsetWidth;
+  app.classList.add('intro');
+  clearTimeout(introTimer);
+  introTimer = setTimeout(() => app.classList.remove('intro'), 1700);
+}
+window.__replayIntro = replayIntro;
+
+/* ---------- window drag (borderless panel) ---------- */
+const headerEl = document.querySelector('header');
+let dragState = null;
+headerEl.addEventListener('pointerdown', (event) => {
+  if (event.target.closest('button, input')) return;
+  dragState = { x: event.screenX, y: event.screenY };
+  headerEl.style.cursor = 'grabbing';
+});
+window.addEventListener('pointermove', (event) => {
+  if (!dragState) return;
+  const dx = event.screenX - dragState.x;
+  const dy = event.screenY - dragState.y;
+  dragState = { x: event.screenX, y: event.screenY };
+  if (dx || dy) post('drag', { dx, dy });
+});
+window.addEventListener('pointerup', () => {
+  dragState = null;
+  headerEl.style.cursor = '';
+});
+
+/* ---------- interactions ---------- */
+$('#tabs').addEventListener('click', (event) => {
+  const btn = event.target.closest('button[data-tab]');
+  if (!btn) return;
+  $$('#tabs button').forEach((b) => b.classList.toggle('active', b === btn));
+  $$('.panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === btn.dataset.tab));
+});
+
+document.body.addEventListener('click', (event) => {
+  const el = event.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  if (action === 'chat') return;
+  post(action);
+});
+
+function sendChat() {
+  const input = $('#chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  post('chat', { text });
+}
+$('#sendBtn').addEventListener('click', sendChat);
+$('#chatInput').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') sendChat();
+});
+
+render(state);
+replayIntro();
+
+// Let Swift push the first real snapshot once the page is ready.
+if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.pet) {
+  post('ready');
+}
+</script>
+</body>
+</html>
