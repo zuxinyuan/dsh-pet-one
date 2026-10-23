@@ -16,6 +16,7 @@ import { ActivityTracker, projectEvent, emptyRuntime } from '../lib/host/activit
 import { interact, rewardTurn, rankOf } from '../lib/host/economy.js'
 import { createSkinRegistry } from '../lib/host/skins.js'
 import { PetOneService } from '../lib/host/service.js'
+import { updatePersonaBot, deletePersonaBot, bindImChannel } from '../lib/host/dsb.js'
 import { makeRoutes } from '../lib/host/routes.js'
 
 /** Fresh temp dir per test. */
@@ -646,6 +647,182 @@ test('createBot success selects the new bot', () => {
   assert.equal(result.ok, true)
   assert.equal(service.store.get().selectedBotSlug, 'bot-newborn')
   assert.equal(service.view().selectedBotSlug, 'bot-newborn')
+  service.close()
+})
+
+/* ---------- edit / delete / IM bind (in-panel) ---------- */
+
+test('updatePersonaBot builds patch and calls registry.update', () => {
+  let seen = null
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { registry: { update(slug, patch) { seen = { slug, patch }; return { ok: true, record: { slug, displayName: patch.displayName } } } } }
+    },
+  }
+  const result = updatePersonaBot(ctx, { botSlug: 'b1', displayName: '新名', model: 'provider/m', description: '简介', roles: ['r1', ''] })
+  assert.equal(result.ok, true)
+  assert.equal(seen.slug, 'b1')
+  assert.equal(seen.patch.displayName, '新名')
+  assert.equal(seen.patch.model, 'provider/m')
+  assert.equal(seen.patch.description, '简介')
+  assert.deepEqual(seen.patch.roles, ['r1'])
+  // empty patch / blank slug rejected
+  assert.equal(updatePersonaBot(ctx, { botSlug: 'b1' }).ok, false)
+  assert.equal(updatePersonaBot(ctx, { botSlug: '' }).error, 'empty-slug')
+  const noService = updatePersonaBot({ get: () => undefined }, { botSlug: 'b1', displayName: 'x' })
+  assert.equal(noService.error, 'dsb-unavailable')
+})
+
+test('updateBot edits via registry.update and refreshes roster', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let seen = null
+  service.ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { registry: { update(slug, patch) { seen = { slug, patch }; return { ok: true, record: { slug, displayName: patch.displayName } } } } }
+    },
+  }
+  const result = service.updateBot({ botSlug: 'bot-edit', displayName: '新名', model: 'provider/m', description: '简介' })
+  assert.equal(result.ok, true)
+  assert.equal(seen.slug, 'bot-edit')
+  assert.equal(seen.patch.displayName, '新名')
+  assert.equal(service.view().botAction.ok, true)
+  assert.equal(service.view().botAction.kind, 'update')
+  service.close()
+})
+
+test('updateBot degrades when DSB is not mounted', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.ctx = { get: () => undefined }
+  const result = service.updateBot({ botSlug: 'bot-x', displayName: '名' })
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'dsb-unavailable')
+  assert.equal(service.view().botAction.ok, false)
+  assert.match(service.view().botAction.line, /Bot 模式没开/)
+  service.close()
+})
+
+test('update-bot desktop command drains into updateBot', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.updateBot = (input) => { called = input; return { ok: true } }
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'update-bot', botSlug: 'bot-u', displayName: '改', model: 'p/m', description: 'd', roles: ['r1'] }]))
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { botSlug: 'bot-u', displayName: '改', description: 'd', model: 'p/m', preset: undefined, roles: ['r1'] })
+  service.close()
+})
+
+test('deletePersonaBot calls preview then confirm', async () => {
+  let previewSlug = null
+  let confirmArgs = null
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { deletions: { preview(slug) { previewSlug = slug; return { token: 'tok-123', displayName: '要删' } }, confirm(slug, token, erase) { confirmArgs = { slug, token, erase }; return { displayName: '要删', phase: 'deleted', memory: 'cleared' } } } }
+    },
+  }
+  const result = await deletePersonaBot(ctx, { botSlug: 'b-del', eraseMemory: true })
+  assert.equal(result.ok, true)
+  assert.equal(previewSlug, 'b-del')
+  assert.equal(confirmArgs.token, 'tok-123')
+  assert.equal(confirmArgs.erase, true)
+  assert.equal(result.phase, 'deleted')
+  assert.equal((await deletePersonaBot(ctx, { botSlug: '' })).error, 'empty-slug')
+  assert.equal((await deletePersonaBot({ get: () => undefined }, { botSlug: 'x' })).error, 'dsb-unavailable')
+})
+
+test('deleteBot emits pending pulse, confirms, and clears selection', async () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { deletions: { preview: () => ({ token: 't', displayName: 'x' }), confirm: (slug, token, erase) => { called = { slug, token, erase }; return { displayName: 'x', phase: 'deleted' } } } }
+    },
+  }
+  service.store.get().selectedBotSlug = 'bot-del'
+  service.store.touch()
+  const result = service.deleteBot({ botSlug: 'bot-del', eraseMemory: false })
+  assert.equal(result.ok, true)
+  assert.equal(result.pending, true)
+  const pulse = service.view().botAction
+  assert.equal(pulse.kind, 'delete')
+  assert.equal(pulse.pending, true)
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  assert.equal(called.slug, 'bot-del')
+  assert.equal(called.erase, false)
+  assert.equal(service.store.get().selectedBotSlug, null)
+  service.close()
+})
+
+test('delete-bot desktop command drains into deleteBot', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.deleteBot = (input) => { called = input; return { ok: true, pending: true } }
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'delete-bot', botSlug: 'bot-d', eraseMemory: true }]))
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { botSlug: 'bot-d', eraseMemory: true })
+  service.close()
+})
+
+test('bindImChannel validates fingerprint and dispatches to externalMessaging.identity', async () => {
+  let seen = null
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { externalMessaging: { identity: (slug, input) => { seen = { slug, input }; return { id: 'im-1' } } } }
+    },
+  }
+  const ok = await bindImChannel(ctx, { botSlug: 'b', kind: 'bind', providerId: 'dsh-im/telegram', accountRef: 'a', fingerprint: 'a'.repeat(64) })
+  assert.equal(ok.ok, true)
+  assert.equal(seen.slug, 'b')
+  assert.equal(seen.input.kind, 'bind')
+  assert.equal(seen.input.providerId, 'dsh-im/telegram')
+  assert.equal(seen.input.accountRef, 'a')
+  const bad = await bindImChannel(ctx, { botSlug: 'b', kind: 'bind', providerId: 'p', accountRef: 'a', fingerprint: 'xyz' })
+  assert.equal(bad.ok, false)
+  assert.equal(bad.error, 'invalid-fingerprint')
+  const ub = await bindImChannel(ctx, { botSlug: 'b', kind: 'unbind' })
+  assert.equal(ub.ok, false)
+  assert.equal(ub.error, 'invalid-unbind')
+  const none = await bindImChannel({ get: () => undefined }, { botSlug: 'b', kind: 'bind', providerId: 'p', accountRef: 'a', fingerprint: 'a'.repeat(64) })
+  assert.equal(none.error, 'dsb-unavailable')
+})
+
+test('bindIm dispatches via externalMessaging.identity', async () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let seen = null
+  service.ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { externalMessaging: { identity: (slug, input) => { seen = { slug, input }; return { id: 'im-1' } } } }
+    },
+  }
+  const result = service.bindIm({ botSlug: 'bot-b', kind: 'bind', providerId: 'dsh-im/feishu', accountRef: 'a', fingerprint: 'f'.repeat(64) })
+  assert.equal(result.ok, true)
+  assert.equal(result.pending, true)
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  assert.equal(seen.slug, 'bot-b')
+  assert.equal(seen.input.kind, 'bind')
+  assert.equal(service.view().botAction.ok, true)
+  service.close()
+})
+
+test('bind-im desktop command drains into bindIm', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.bindIm = (input) => { called = input; return { ok: true, pending: true } }
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'bind-im', botSlug: 'bot-b', bindKind: 'bind', providerId: 'dsh-im/telegram', accountRef: 'a1', fingerprint: 'f'.repeat(64) }]))
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { botSlug: 'bot-b', kind: 'bind', providerId: 'dsh-im/telegram', accountRef: 'a1', fingerprint: 'f'.repeat(64), id: undefined, expectedRevision: undefined, name: undefined, enabled: undefined, inheritEnabled: undefined })
   service.close()
 })
 

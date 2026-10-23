@@ -385,6 +385,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if !slug.isEmpty { extra["botSlug"] = slug }
                 self.queueCommand("select-bot", extra: extra)
                 if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+            case "update-bot":
+                if let slug = payload["botSlug"] as? String, !slug.isEmpty {
+                    var extra: [String: Any] = ["botSlug": slug]
+                    if let name = payload["displayName"] as? String { extra["displayName"] = name }
+                    if let description = payload["description"] as? String { extra["description"] = description }
+                    if let model = payload["model"] as? String { extra["model"] = model }
+                    if let preset = payload["preset"] as? String { extra["preset"] = preset }
+                    if let roles = payload["roles"] as? [String] { extra["roles"] = roles }
+                    self.queueCommand("update-bot", extra: extra)
+                    if let name = payload["displayName"] as? String, !name.isEmpty {
+                        self.showBubble("正在更新「\(name)」…")
+                    } else {
+                        self.showBubble("正在更新 Bot…")
+                    }
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "delete-bot":
+                if let slug = payload["botSlug"] as? String, !slug.isEmpty {
+                    var extra: [String: Any] = ["botSlug": slug]
+                    if let erase = payload["eraseMemory"] as? Bool { extra["eraseMemory"] = erase }
+                    self.queueCommand("delete-bot", extra: extra)
+                    self.showBubble("正在删除 Bot…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "bind-im":
+                if let slug = payload["botSlug"] as? String, !slug.isEmpty {
+                    var extra: [String: Any] = ["botSlug": slug]
+                    if let kind = payload["bindKind"] as? String, !kind.isEmpty {
+                        extra["bindKind"] = kind
+                    } else if let kind = payload["kind"] as? String, !kind.isEmpty {
+                        extra["bindKind"] = kind
+                    }
+                    for key in ["providerId", "accountRef", "fingerprint", "id", "name"] {
+                        if let value = payload[key] as? String, !value.isEmpty { extra[key] = value }
+                    }
+                    if let rev = payload["expectedRevision"] as? Int {
+                        extra["expectedRevision"] = rev
+                    } else if let rev = payload["expectedRevision"] as? Double {
+                        extra["expectedRevision"] = Int(rev)
+                    }
+                    if let enabled = payload["enabled"] as? Bool { extra["enabled"] = enabled }
+                    if let inherit = payload["inheritEnabled"] as? Bool { extra["inheritEnabled"] = inherit }
+                    self.queueCommand("bind-im", extra: extra)
+                    let kind = (extra["bindKind"] as? String) ?? "bind"
+                    self.showBubble(kind == "unbind" ? "正在解绑 IM…" : "正在绑定 IM…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
             case "drag":
                 if let dx = payload["dx"] as? Double, let dy = payload["dy"] as? Double {
                     self.movePanel(dx: dx, dy: dy)

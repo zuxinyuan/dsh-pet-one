@@ -1,7 +1,7 @@
 # Plan: 面板内创建 PersonaBot（像 Grok Bot）
 
 **日期**：2026-10-23（Asia/Shanghai）  
-**状态**：调查完成；创建路径 + model + `target:'bot'` 透传 + **多 bot 选择器**已落地（本分支）  
+**状态**：调查完成；创建路径 + model + `target:'bot'` 透传 + **多 bot 选择器** + **面板内编辑 / 删除 / IM 绑定**均已落地（本分支）  
 **关闭的决策（soulmate）**：在宠物面板内创建 PersonaBot，**不** deep-link-only 到 DSB，**不** 走 nanobot。ADR-010/012/013 仍成立：大脑是 DSH/DSB；**禁止**直写 `botharness.db`。
 
 ---
@@ -108,13 +108,14 @@ Panel [创建] → post('create-bot', {displayName, persona?, model?})
 - **桌面 chat `target:'bot'` + `botSlug` 透传**：panel → `main.swift` `queueCommand` → `drainDesktopCommands` → `chat(text, {target, botSlug})` → `sendToBot`
 - **多 bot 选择器**：阵容行可点选；`selectedBotSlug` 写入宠物 `state.json`（**非** `botharness.db`）+ panel `localStorage`；footer 目标钮显示短名；历史/定时按所选 bot 过滤；创建成功后自动选中新生 bot
 - `writeLive()` 补齐 `bots` / `botBridge` / `selectedBotSlug` 等字段（此前只在 `view()`，桌面读不到阵容）
-- 计划本文档
+- **面板内编辑 / 删除 / IM 绑定（见 §7）**：`registry.update` / `deletions.preview+confirm` / `externalMessaging.identity` 三套 Cordis API 全部经 `botharness`，不直写 DB；面板「编辑」表单复用 create 风格，删除走浏览器 `confirm` 二次确认 + DSB preview/confirm 双保险；IM 绑定表单走 `bind-im` → `bindIm`，已绑定行支持 `unbind`
+- `test/host.test.js` 增补 10 个用例覆盖上述三条路径（dsb 函数 + service 命令分发）
+- 计划本文档（§7 更新）
 
 **仍打开 / 刻意不做**：
 
 - Model catalog 下拉（目前是自由文本，对齐 legacy `record.model` 字符串；不另起第二脑）
 - preset 选择器、Git / zip / Marketplace 导入
-- 编辑、删除、渠道绑定
 - 改 ADR-010 正文（可另开 ADR-014「面板可创建」）
 
 **验收**：
@@ -139,3 +140,56 @@ Panel 发送（target=bot）
   → chat(text, {target, botSlug}) 优先 options.botSlug，否则 resolveSelectedBotSlug()
   → sendToBot(ctx, botSlug, text)   // ADR-013 Cordis，不直写 SQLite
 ```
+
+
+## 7. 面板内编辑 / 删除 / IM 绑定（本次新增）
+
+### 7.1 编辑 PersonaBot
+
+```
+Panel [编辑] → post('update-bot', {botSlug, displayName, description?, model?, roles?})
+  → main.swift queueCommand("update-bot", …)
+  → commands.json → drainDesktopCommands
+  → updatePersonaBot(ctx, …) → botharness.registry.update(slug, patch)
+  → resetBotCache + readBots({force:true}) → live.json → 阵容刷新
+```
+
+- 可编辑字段对齐 `registry.update` 的 PersonaBotPatch：`displayName`（必填校验 ≤512）、`description`（≤160）、`model`、`preset`、`roles`（≤8）。
+- 空 patch 返回 `empty-patch`；DSB 缺失返回 `dsb-unavailable`（提示「Bot 模式没开」）。
+
+### 7.2 删除 PersonaBot
+
+```
+Panel [删除]（编辑表单内）
+  → 浏览器 confirm 二次确认
+  → post('delete-bot', {botSlug, eraseMemory?})
+  → main.swift queueCommand("delete-bot")
+  → deleteBot → deletePersonaBot → botharness.deletions.preview(slug) 取 token
+                                          → botharness.deletions.confirm(slug, token, eraseMemory)
+  → 若删除的是当前选中 bot：selectBot(null)
+  → resetBotCache + readBots({force:true}) → live.json 刷新
+```
+
+- 受保护 bot（如 Tob）由 DSB 返回 `protected-bot`，提示「受保护的 Bot 不能删」。
+- 删除为异步（preview+confirm）；`botAction` 脉冲先 `pending:true`，完成后置成功/失败行。
+
+### 7.3 绑定 IM 渠道（飞书 / Telegram / …）
+
+```
+Panel [绑定到当前 Bot]（IM 渠道卡）
+  → post('bind-im', {botSlug, kind:'bind', providerId, accountRef, fingerprint(64hex)})
+  → main.swift queueCommand("bind-im")
+  → bindIm → bindImChannel → botharness.externalMessaging.identity(slug, {kind:'bind', providerId, accountRef, fingerprint})
+  → 已绑定行 [解绑] → kind:'unbind' + id + expectedRevision
+```
+
+- 绑定走 DSB 自带 `externalMessaging`，**禁止** nanobot；`providerId` 形如 `dsh-im/telegram`（面板下拉自动填，可手改）。
+- `fingerprint` 必须 64 位 hex（来自 DSB / dsh-im 账号准备），否则 `invalid-fingerprint`。
+- IM 渠道列表（只读）来自 `messaging_bindings`（`imChannels` / `imBindings`）；绑定结果经 `refreshBotsAfterMutation` 刷新。
+
+### 7.4 约束复核
+
+- ADR-011：所有失败走 `{ok:false}`，不拖垮宠物；DSB 缺失时降级提示。
+- ADR-013：编辑 / 删除 / 绑全部经 Cordis `botharness`，**不**直写 `botharness.db`。
+- ADR-012：不引入 nanobot（IM 绑定复用 DSB `externalMessaging`）。
+- 不写密钥 / token：fingerprint 由用户从 DSB 账号准备处粘贴，不落文件明文。
