@@ -1,7 +1,7 @@
 # Plan: 面板内创建 PersonaBot（像 Grok Bot）
 
 **日期**：2026-10-23（Asia/Shanghai）  
-**状态**：调查完成；最小创建路径已落地（本分支）  
+**状态**：调查完成；最小创建路径 + model 字段 + 桌面 `target:'bot'` 透传已落地（本分支）  
 **关闭的决策（soulmate）**：在宠物面板内创建 PersonaBot，**不** deep-link-only 到 DSB，**不** 走 nanobot。ADR-010/012/013 仍成立：大脑是 DSH/DSB；**禁止**直写 `botharness.db`。
 
 ---
@@ -61,7 +61,7 @@ Onboarding 也有入口：`requestBotCreation()` → 同一套 Create Bot UI。
 | **创建按钮** | **无**；文案写「去 DSH 的 Bot 模式创建一个」 | `panel/index.html` empty state + footer hint |
 | 编辑 / 删 / 绑渠道 | 无 | ADR-010 代价条 |
 
-已知缺口（旁路，非本 PR 必做）：桌面 `sendChat` 未把 panel 的 `target:'bot'` 写入 `commands.json`（`main.swift` 只传 `text`；`service.drainDesktopCommands` 调 `this.chat(command.text)` 无 options）——Bot 发送在 Cordis/HTTP 路径可用，桌面队列路径可能仍走会话。
+~~已知缺口：桌面 `sendChat` 丢 `target:'bot'`~~ **已修**（见 §5）：`main.swift` 把 `target` / `botSlug` 写入 `commands.json`；`drainDesktopCommands` 透传给 `chat(text, options)`。
 
 ---
 
@@ -69,7 +69,7 @@ Onboarding 也有入口：`requestBotCreation()` → 同一套 Create Bot UI。
 
 要达到「像 Grok Bot 一样在面板里建 PersonaBot」：
 
-1. **UI**：阵容卡「创建」→ 名称 + 可选人格（模型/渠道稍后）
+1. **UI**：阵容卡「创建」→ 名称 + 可选人格 + 可选模型（渠道/preset 目录稍后）
 2. **桌面桥**：`webkit` action → `commands.json` kind `create-bot`
 3. **Host**：`PetOneService.createBot` → `botharness.creations.create`（**不** SQLite 直写）
 4. **反馈**：创建成功后强制刷新 `readBots({force:true})`，气泡/脉冲提示
@@ -80,7 +80,7 @@ Onboarding 也有入口：`requestBotCreation()` → 同一套 Create Bot UI。
 ## 4. 最小 UI+API 流（复用 DSB，无第二脑）
 
 ```
-Panel [创建] → post('create-bot', {displayName, persona?})
+Panel [创建] → post('create-bot', {displayName, persona?, model?})
   → main.swift queueCommand("create-bot", …)
   → ~/.dsh/pet-one/commands.json
   → PetOneService.drainDesktopCommands
@@ -100,16 +100,21 @@ Panel [创建] → post('create-bot', {displayName, persona?})
 
 ## 5. 本晚落地 vs 剩余
 
-**本分支已做（最小安全切片）**：
+**本分支已做**：
 
-- `createPersonaBot` + service 命令 + 面板「创建」表单（名称 + 可选人格）
+- `createPersonaBot` + service 命令 + 面板「创建」表单（名称 + 可选人格 + **可选 model**）
+- Host / Swift / 面板透传 `model`（及可选 `preset`，API 已支持；UI 暂只暴露 model）到 `botharness.creations.create`
+- **桌面 chat `target:'bot'`（及可选 `botSlug`）透传**：panel → `main.swift` `queueCommand` → `drainDesktopCommands` → `chat(text, {target, botSlug})` → `sendToBot`
 - 计划本文档
 
-**刻意不做**：
+**仍打开 / 刻意不做**：
 
-- 模型 / preset / Git / zip / Marketplace
-- 编辑、删除、渠道绑定
-- 修 chat `target` 桌面透传（另开 issue/PR）
+- Model catalog 下拉（目前是自由文本，对齐 legacy `record.model` 字符串；不另起第二脑）
+- preset 选择器、Git / zip / Marketplace 导入
+- 编辑、删除、渠道绑定、多 bot 选中聊天（panel 仍用默认 DM / 首个 bot）
 - 改 ADR-010 正文（可另开 ADR-014「面板可创建」）
 
-**验收**：Bot 模式已开时，面板创建 → `persona_bots` 多一行且出现 DM；DSB 禁用时提示「Bot 模式没开」且宠物仍活。
+**验收**：
+
+1. Bot 模式已开时，面板创建（可填 model）→ `persona_bots` 多一行且出现 DM；DSB 禁用时提示「Bot 模式没开」且宠物仍活。
+2. 面板切到「Bot」目标发消息 → `commands.json` 含 `target:"bot"` → Host 走 `sendToBot`（非会话 agent）。

@@ -349,7 +349,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "pat", "feed", "play":
                 self.interact(action)
             case "chat":
-                if let text = payload["text"] as? String { self.sendChat(text) }
+                if let text = payload["text"] as? String {
+                    var extra: [String: Any] = ["text": text]
+                    if let target = payload["target"] as? String, !target.isEmpty {
+                        extra["target"] = target
+                    }
+                    if let botSlug = payload["botSlug"] as? String, !botSlug.isEmpty {
+                        extra["botSlug"] = botSlug
+                    }
+                    self.sendChat(text, extra: extra)
+                }
             case "create-bot":
                 if let name = payload["displayName"] as? String {
                     var extra: [String: Any] = ["displayName": name]
@@ -358,6 +367,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     if let description = payload["description"] as? String, !description.isEmpty {
                         extra["description"] = description
+                    }
+                    if let model = payload["model"] as? String, !model.isEmpty {
+                        extra["model"] = model
+                    }
+                    if let preset = payload["preset"] as? String, !preset.isEmpty {
+                        extra["preset"] = preset
                     }
                     self.queueCommand("create-bot", extra: extra)
                     self.showBubble("正在创建「\(name)」…")
@@ -959,9 +974,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: chat & tools
 
-    private func sendChat(_ text: String) {
+    private func sendChat(_ text: String, extra: [String: Any] = [:]) {
         chatPending = true
-        queueCommand("chat", extra: ["text": text])
+        var payload = extra
+        payload["text"] = text
+        queueCommand("chat", extra: payload)
         showBubble("收到，我去问问…")
         if infoPanel.isVisible { infoPanel.push(panelState()) }
     }

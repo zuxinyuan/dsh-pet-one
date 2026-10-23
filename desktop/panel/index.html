@@ -584,6 +584,7 @@ footer::after{
         <div class="create-form" id="createBotForm" hidden>
           <input id="createBotName" maxlength="64" placeholder="名称，例如：小研" />
           <textarea id="createBotPersona" maxlength="4000" placeholder="人格设定（可选）。留空则用空白人格。"></textarea>
+          <input id="createBotModel" maxlength="256" placeholder="模型（可选）。留空则用 Host 默认；与 DSB creations.create 的 model 字段一致" />
           <div class="create-actions">
             <button class="btn mini" id="createBotCancel" type="button">取消</button>
             <button class="btn primary mini" id="createBotSubmit" type="button">确认创建</button>
@@ -885,13 +886,19 @@ $('#createBotCancel')?.addEventListener('click', () => {
 $('#createBotSubmit')?.addEventListener('click', () => {
   const name = ($('#createBotName')?.value || '').trim();
   const persona = ($('#createBotPersona')?.value || '').trim();
+  const model = ($('#createBotModel')?.value || '').trim();
   if (!name) {
     $('#createBotName')?.focus();
     return;
   }
-  post('create-bot', { displayName: name, ...(persona ? { persona } : {}) });
+  post('create-bot', {
+    displayName: name,
+    ...(persona ? { persona } : {}),
+    ...(model ? { model } : {}),
+  });
   if ($('#createBotName')) $('#createBotName').value = '';
   if ($('#createBotPersona')) $('#createBotPersona').value = '';
+  if ($('#createBotModel')) $('#createBotModel').value = '';
   if (createForm) createForm.hidden = true;
 });
 

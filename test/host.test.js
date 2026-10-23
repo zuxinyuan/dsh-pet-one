@@ -427,15 +427,47 @@ test('createBot reuses botharness.creations.create when DSB is present', () => {
       }
     },
   }
-  const result = service.createBot({ displayName: '小研', persona: '你是助手' })
+  const result = service.createBot({
+    displayName: '小研',
+    persona: '你是助手',
+    model: 'deepseek/deepseek-chat',
+    preset: 'default-plan',
+  })
   assert.equal(result.ok, true)
   assert.equal(result.botSlug, 'bot-testslug')
   assert.equal(seen.input.displayName, '小研')
   assert.equal(seen.input.persona, '你是助手')
+  assert.equal(seen.input.model, 'deepseek/deepseek-chat')
+  assert.equal(seen.input.preset, 'default-plan')
   assert.match(seen.operationKey, /^petone-[a-f0-9]{32}$/)
   const view = service.view()
   assert.equal(view.botCreate.ok, true)
   assert.match(view.botCreate.line, /小研/)
+  service.close()
+})
+
+test('createBot omits blank model/preset from creations payload', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let seen = null
+  service.ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return {
+        creations: {
+          create(input) {
+            seen = input
+            return { record: { slug: 'bot-blank', displayName: input.displayName }, channelId: 'ch' }
+          },
+        },
+      }
+    },
+  }
+  const result = service.createBot({ displayName: '空模', model: '  ', preset: '' })
+  assert.equal(result.ok, true)
+  assert.equal(seen.displayName, '空模')
+  assert.equal('model' in seen, false)
+  assert.equal('preset' in seen, false)
   service.close()
 })
 
@@ -449,9 +481,55 @@ test('create-bot desktop command is drained into createBot', () => {
   }
   writeFileSync(
     join(dir, 'commands.json'),
-    JSON.stringify([{ kind: 'create-bot', displayName: '阿福', persona: '温和' }]),
+    JSON.stringify([{
+      kind: 'create-bot',
+      displayName: '阿福',
+      persona: '温和',
+      model: 'provider/model-a',
+      preset: 'preset-1',
+    }]),
   )
   service.drainDesktopCommands()
-  assert.deepEqual(called, { displayName: '阿福', persona: '温和', description: undefined })
+  assert.deepEqual(called, {
+    displayName: '阿福',
+    persona: '温和',
+    description: undefined,
+    model: 'provider/model-a',
+    preset: 'preset-1',
+  })
+  service.close()
+})
+
+test('chat desktop command keeps target bot through drainDesktopCommands', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.chat = (text, options = {}) => {
+    called = { text, options }
+    return { ok: true, target: options.target, botSlug: options.botSlug }
+  }
+  writeFileSync(
+    join(dir, 'commands.json'),
+    JSON.stringify([{ kind: 'chat', text: '你好', target: 'bot', botSlug: 'bot-tob' }]),
+  )
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { text: '你好', options: { target: 'bot', botSlug: 'bot-tob' } })
+  service.close()
+})
+
+test('chat desktop command without target stays session chat', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.chat = (text, options = {}) => {
+    called = { text, options }
+    return { ok: true }
+  }
+  writeFileSync(
+    join(dir, 'commands.json'),
+    JSON.stringify([{ kind: 'chat', text: '会话消息' }]),
+  )
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { text: '会话消息', options: {} })
   service.close()
 })
