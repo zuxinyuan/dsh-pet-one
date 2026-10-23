@@ -102,6 +102,7 @@ rm ~/.dsh/pet-one/page-hidden      # 恢复
 - **面板发消息**：聊天栏左侧「Bot / 会话」切换。选 Bot 时消息经 `botharness.channels.appendMessage` 写入 PersonaBot 的 DM，再 `runtime.admitDmMessage` 唤醒它回复；未装 DSB 时自动退化为“Bot 模式没开”提示
 - **IM 渠道状态**：Bot 页签列出 DSB 支持的 11 个平台（Telegram / 飞书 / Lark / Slack / Discord / QQ / 微信 / 企业微信 / 钉钉 / Matrix / WhatsApp）与各自连接状态，数据来自 `messaging_bindings`
 - **Telegram 走 DSB 原生渠道**（polling 或 webhook），不再需要 nanobot
+- **会话历史**：读 DSB 的 `source_events`（已结构化，含 human/bot 方向），面板以聊天气泡展示最近 20 条，默认折叠最近 4 条、可展开，正文截断 120 字
 
 ![面板 Bot 页签](docs/panel-bots.png)
 

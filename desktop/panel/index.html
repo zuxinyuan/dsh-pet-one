@@ -345,6 +345,23 @@ header::after{background-size:200% 100%;animation:sheen 7s linear infinite}
 .sched.off{opacity:.45}
 .sched .kind{margin-left:auto;font-size:9px;color:var(--muted);letter-spacing:.08em}
 
+.hist{display:flex;flex-direction:column;gap:5px;max-height:132px;overflow-y:auto;padding-right:2px}
+.btn.mini{padding:2px 7px;font-size:9px;letter-spacing:.1em;margin-left:auto}
+.hint{margin-left:auto}
+.hist::-webkit-scrollbar{width:4px}
+.hist::-webkit-scrollbar-thumb{background:rgba(232,201,138,.25)}
+.msg{display:flex;flex-direction:column;gap:2px;max-width:92%}
+.msg.me{align-self:flex-end;align-items:flex-end}
+.msg .who{font-size:8px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+.msg .bubble{
+  padding:5px 8px;font-size:10.5px;line-height:1.4;color:#e7e2d4;
+  border:1px solid rgba(206,184,254,.14);background:rgba(255,255,255,.035);
+  clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,0 100%);
+  word-break:break-word;
+}
+.msg.me .bubble{border-color:rgba(232,201,138,.3);background:rgba(232,201,138,.09);color:#f6ecd6}
+.msg .at{font-size:8px;color:#6f7a97}
+
 /* chat */
 footer{
   position:relative;z-index:4;display:flex;gap:6px;align-items:center;
@@ -561,10 +578,13 @@ footer::after{
         <div id="imList"></div>
       </div>
       <div class="card">
-        <div class="card-title">说明</div>
-        <div class="memory">数据来自 DeepSeekBot（DSH 的 Bot 模式插件），只读。</div>
-        <div class="memory">在 DSH 的「Bot 模式」里创建/编辑 PersonaBot，这里同步显示。</div>
+        <div class="card-title">会话历史
+          <span class="hint" id="histHint"></span>
+          <button class="btn mini" id="histToggle" style="margin-left:6px">展开</button>
+        </div>
+        <div id="historyList"><div class="empty">读取中…</div></div>
       </div>
+      <div class="memory" style="padding:2px 4px">只读同步自 DeepSeekBot；在「Bot 模式」里创建与编辑。</div>
     </section>
   </main>
 
@@ -604,6 +624,10 @@ let state = {
   pomodoro: null,
   voice: true
 };
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
 function fmt(n) {
   n = Number(n || 0);
@@ -746,6 +770,34 @@ function render(s) {
   $('#targetBtn').disabled = !bridge.ok;
   $('#targetBtn').title = bridge.ok ? '点击切换：发给 PersonaBot / 当前会话' : 'Bot 模式未连接';
 
+  // conversation history
+  const hist = s.botHistory || [];
+  const histShown = histExpanded ? hist : hist.slice(-4);
+  const histList = $('#historyList');
+  histList.innerHTML = '';
+  if (!hist.length) {
+    histList.innerHTML = '<div class="empty">还没有对话记录</div>';
+  } else {
+    const wrap = document.createElement('div');
+    wrap.className = 'hist';
+    for (const item of histShown) {
+      const me = item.from === 'human';
+      const el = document.createElement('div');
+      el.className = 'msg' + (me ? ' me' : '');
+      const when = item.at ? new Date(item.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
+      el.innerHTML = `<span class="who">${me ? '你' : 'BOT'}</span>
+        <div class="bubble">${escapeHtml(item.text || '')}</div>
+        <span class="at">${when}</span>`;
+      wrap.appendChild(el);
+    }
+    histList.appendChild(wrap);
+    histList.scrollTop = histExpanded ? 0 : wrap.scrollHeight;
+  }
+  $('#histHint').textContent = hist.length ? hist.length + ' 条' : '';
+  const toggle = $('#histToggle');
+  toggle.textContent = histExpanded ? '收起' : '展开';
+  toggle.style.display = hist.length > 4 ? '' : 'none';
+
   // IM channels reported by DSB (telegram/feishu/...) if available
   const ims = s.imChannels || [];
   const imList = $('#imList');
@@ -789,6 +841,7 @@ window.__render = render;
 
 let introTimer = 0;
 let chatTarget = 'session';
+let histExpanded = false;
 function replayIntro() {
   const app = document.querySelector('.app');
   app.classList.remove('intro');
@@ -842,6 +895,10 @@ function sendChat() {
   input.value = '';
   post('chat', { text, target: chatTarget });
 }
+$('#histToggle').addEventListener('click', () => {
+  histExpanded = !histExpanded;
+  render(state);
+});
 $('#targetBtn').addEventListener('click', () => {
   chatTarget = chatTarget === 'bot' ? 'session' : 'bot';
   render(state);
