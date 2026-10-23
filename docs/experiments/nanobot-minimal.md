@@ -172,3 +172,53 @@ HOME=/tmp/nanobot-lab/home .venv/bin/nanobot serve
 1. `pkill -f "nanobot serve"` **杀不掉**——nanobot 用 `setproctitle` 把进程名改成了 `nanobot`，命令行里没有 `serve` 了。要按**端口**杀：`lsof -nP -iTCP:8900 -sTCP:LISTEN -t | xargs kill -9`。
 2. macOS **没有 `setsid`**，守护只能用 `nohup ... & disown` 或 `launchd`。
 3. 端口被占时，新进程不会报错退出，而是**静默失败**；`/health` 仍由旧进程响应，导致“配置改了但行为没变”。必须用 `lsof` 校验端口归属。
+
+
+---
+
+## 10. Telegram 渠道接入（2026-10-23 实战记录）
+
+### 10.1 一个决定性的发现：`serve` 不启渠道
+
+| 命令 | 作用 | 端口 |
+|---|---|---|
+| `nanobot serve` | **只有** OpenAI 兼容 API | 8900 |
+| `nanobot gateway` | 完整常驻进程：渠道 + cron + dream + heartbeat + API | 18790 |
+
+第一次用 `serve` 起网关，日志里完全没有 Telegram 的任何字样，误以为配置错了。**要接渠道必须用 `nanobot gateway`**。
+
+### 10.2 PyPI 发行版剥离了所有渠道依赖
+
+`nanobot-ai==0.3.5` 的 metadata：
+
+- `Requires-Dist` 共 61 条，**零条**与 telegram 相关
+- `Provides-Extra` 只有：`api`, `azure`, `bedrock`, `dev`, `documents`, `langfuse`, `olostep`, `pdf`
+- **没有** `telegram` / `discord` / `feishu` 等渠道 extra
+
+而源码仓库的 `pyproject.toml` 里 `python-telegram-bot[socks,webhooks]>=22.6` 是**主依赖**。
+
+→ 结论：**PyPI 版跑不了渠道**，要么装源码版，要么手动补装对应渠道 SDK。
+
+实测 `channels status` 在补装前不列 Telegram，补装后出现 `Telegram ✓`。
+
+### 10.3 nanobot 会自动补装可选依赖
+
+`gateway` 启动时会检测缺失的可选特性并**自己尝试 `uv pip install`**（日志：`Optional feature 'telegram' uv install exited with code 0`）。所以手动补装不是必须的，但预装能省一次启动抖动。
+
+### 10.4 安全落盘
+
+```
+~/.dsh/pet-one/gateway/env         # chmod 600, PETONE_TG_TOKEN=...
+~/.dsh/pet-one/gateway/home/       # HOME 隔离，config.json chmod 600
+```
+
+配置用 `${PETONE_TG_TOKEN}` 插值，**token 不写进 config.json**，避免误提交或误分享。
+
+### 10.5 验证结果
+
+```
+✓ Channels enabled: telegram, websocket
+✓ Cron: 2 scheduled jobs (dream, heartbeat)
+telegram | bot @gugu_zu_bot connected
+✓ Health endpoint: http://127.0.0.1:18790/health
+```
