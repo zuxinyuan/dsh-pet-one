@@ -4,6 +4,8 @@
 
 **结论**：成立。安装 21.9s、冷启动 1.09s、常驻 101–109MB，实际搭建 < 5 分钟。
 
+> **补充（同日晚些）**：本机 magpie 网关（`127.0.0.1:3425`）可用，已用真实模型 `group/deepseek-flash` 重跑全链路，见第 9 节。
+
 ---
 
 ## 环境
@@ -137,3 +139,36 @@ HOME=/tmp/nanobot-lab/home .venv/bin/nanobot serve
 - 多轮会话的 RSS 增长曲线
 - 渠道（TG/飞书）真实收发
 - Dream 记忆整理的实际行为
+
+
+---
+
+## 9. 真实模型复跑（magpie 网关）
+
+**背景**：第一轮因 DSH 凭据受保护不可读，只能用 mock。后发现本机 `magpie` 网关（端口 3425）提供 OpenAI 兼容接口，DSH 默认模型即 `group/deepseek-flash`，可直接指向它，**无需读取 DSH 凭据**。
+
+配置：
+
+```json
+{
+  "providers": {"custom": {"apiKey": "local-magpie", "apiBase": "http://127.0.0.1:3425/v1"}},
+  "agents": {"defaults": {"provider": "custom", "model": "group/deepseek-flash"}}
+}
+```
+
+结果：
+
+| 指标 | 值 |
+|---|---|
+| 冷启动 → health | 0.56 s |
+| 空闲 RSS | 101.5 MB |
+| 第 1 轮延迟 | 4.41 s（prompt 7451 / completion 14） |
+| 第 2 轮同 session | 2.10 s，能记住上一轮 ✅ |
+| 新 session | 干净，无历史 ✅ |
+| 3 轮后 RSS | 157.8 MB |
+
+**踩坑记录**（都已写进评估文档的部署建议）：
+
+1. `pkill -f "nanobot serve"` **杀不掉**——nanobot 用 `setproctitle` 把进程名改成了 `nanobot`，命令行里没有 `serve` 了。要按**端口**杀：`lsof -nP -iTCP:8900 -sTCP:LISTEN -t | xargs kill -9`。
+2. macOS **没有 `setsid`**，守护只能用 `nohup ... & disown` 或 `launchd`。
+3. 端口被占时，新进程不会报错退出，而是**静默失败**；`/health` 仍由旧进程响应，导致“配置改了但行为没变”。必须用 `lsof` 校验端口归属。

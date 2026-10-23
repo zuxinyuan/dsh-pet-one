@@ -2,6 +2,7 @@
 
 > 版本：v1（2026-10-23）
 > 实验环境：macOS（Apple Silicon），uv 0.12.19，CPython 3.12.13
+> 模型：本机 magpie 网关 `http://127.0.0.1:3425/v1`，`group/deepseek-flash`（实测真实调用）
 > 结论先行：**可以纳管，成本中等偏低；最大的风险不是技术，而是“双脑记忆不一致”和“渠道需要公网”**。
 
 ---
@@ -26,6 +27,29 @@ nanobot 适合当**渠道 + 定时 + 记忆整理**的后台，不适合当**理
 | 会话落盘 | `~/.nanobot/sessions/<hash>/<base64(session_id)>.jsonl` | 按 session 隔离 |
 | provider 失败行为 | **不崩、不 5xx**；把 `Error calling LLM: Connection error.` 写进 assistant 内容；`/health` 仍 ok | 杀掉 mock provider |
 | 无 provider 配置 | **直接退出**：`Error: No provider is configured for model ...` | `config.json = {}` |
+
+### 1.1 真实模型实测（magpie 网关，2026-10-23 补充）
+
+| 指标 | 实测值 |
+|---|---|
+| 冷启动 → `/health` | **0.56 s** |
+| 空闲 RSS | **101.5 MB** |
+| 第 1 轮延迟（冷） | **4.41 s** |
+| 第 2 轮延迟（同 session） | **2.10 s** |
+| 单轮 prompt tokens | **7451**（system prompt + 22 个工具） |
+| 单轮 completion tokens | 14–53 |
+| 3 轮后 RSS | **157.8 MB** |
+| 会话记忆 | 同 `session_id` 能回忆上一轮 ✅ |
+| 会话隔离 | 新 `session_id` 干净 ✅ |
+
+**成本估算**（DeepSeek 官方价：输入 2 元/百万、缓存 0.5 元/百万、输出 8 元/百万）：
+
+| 场景 | 单轮 | 20 轮/天 | 100 轮/天 |
+|---|---|---|---|
+| 无缓存 | 0.0150 元 | 9.0 元/月 | **45 元/月** |
+| 90% 缓存命中 | 0.0050 元 | 3.0 元/月 | **15 元/月** |
+
+> **关键发现：7451 token 里有约 7000 是 nanobot 自带的固定开销**（22 个工具定义 + AGENTS/SOUL/USER/HEARTBEAT 四个 bootstrap 文件 + 记忆说明）。这部分**每轮都发**，与 DSH 的 system prompt 高度重复。若不做精简，单纯“转发一句话”也要付 7k token 的代价。
 
 ### 由此得出的三条工程要求
 
@@ -182,6 +206,7 @@ POST /v1/chat/completions { session_id: "dsession:abc123", messages:[...] }
 
 ## 8. 未解决 / 待验证（共同未知）
 
+0. **双份 system prompt 的成本**：nanobot 7451 token + DSH 自身上下文，每轮叠加。需决定是否裁剪 nanobot 的工具集（`mcp`/`my`/`spawn` 等按需开）。
 1. **nanobot 的 Dream 记忆格式**未实测：是否可直接给 DSH 当“长期记忆”读？→ 需看 `nanobot/skills/dream` 或 `memory/` 实现。
 2. **多会话并发时的内存增长曲线**未测：单请求 +80MB 是常态还是泄漏？→ 需压测 100 轮。
 3. **渠道消息去重**：nanobot 自身是否处理 TG 重投递？→ 需读 `channels/` 实现。
