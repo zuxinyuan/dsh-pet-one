@@ -337,6 +337,13 @@ header::after{background-size:200% 100%;animation:sheen 7s linear infinite}
   display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px dashed rgba(206,184,254,.1);
 }
 .bot:last-child{border-bottom:0}
+.bot.pick{cursor:pointer;border-radius:4px;padding:8px 6px;margin:0 -6px;border-bottom-color:transparent;
+  transition:background .15s ease,box-shadow .15s ease}
+.bot.pick:hover{background:rgba(232,201,138,.06)}
+.bot.pick.on{background:linear-gradient(160deg,rgba(232,201,138,.14),rgba(20,30,58,.55));
+  box-shadow:inset 0 0 0 1px rgba(232,201,138,.45)}
+.bot.pick.on .tag{border-color:var(--gold);background:rgba(232,201,138,.12)}
+.bot-picker-hint{font-size:9.5px;color:var(--muted);margin:2px 0 6px;letter-spacing:.04em}
 .bot .avatar{
   width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;
   border:1px solid var(--gold-dim);background:linear-gradient(160deg,rgba(232,201,138,.16),rgba(20,30,58,.7));
@@ -607,7 +614,7 @@ footer::after{
         </div>
         <div id="historyList"><div class="empty">读取中…</div></div>
       </div>
-      <div class="memory" style="padding:2px 4px">阵容同步自 DeepSeekBot；可在本页「创建」PersonaBot（编辑/渠道仍去 Bot 模式）。</div>
+      <div class="memory" style="padding:2px 4px">阵容同步自 DeepSeekBot；点选一位作为聊天对象，「创建」走 DSB API（编辑/渠道仍去 Bot 模式）。</div>
     </section>
   </main>
 
@@ -743,28 +750,55 @@ function render(s) {
   });
   $('#packHint').textContent = s.packId || '';
 
-  // bots
+  // bots + multi-bot selector
   const botsState = s.bots || { ok: false, bots: [], schedules: [], error: 'none' };
+  const roster = botsState.bots || [];
+  const createPulse = s.botCreate;
+  if (createPulse && createPulse.ok && createPulse.botSlug) {
+    const createKey = String(createPulse.at || '') + ':' + createPulse.botSlug;
+    if (createKey !== lastAppliedCreateKey) {
+      lastAppliedCreateKey = createKey;
+      setSelectedBotSlug(createPulse.botSlug, { persist: true });
+    }
+  }
+  // Prefer local click / localStorage; seed from host only when local is empty or stale.
+  const hostSlug = (typeof s.selectedBotSlug === 'string' && s.selectedBotSlug)
+    || (typeof s.botBridge?.botSlug === 'string' && s.botBridge.botSlug)
+    || null;
+  selectedBotSlug = resolveSelectedBotSlug(roster, selectedBotSlug || hostSlug, botsState.dm);
+
   const botList = $('#botList');
   botList.innerHTML = '';
   if (!botsState.ok) {
     botList.innerHTML = '<div class="empty">没发现 Bot 模式数据（DeepSeekBot 未安装或未启动）</div>';
-  } else if (!(botsState.bots || []).length) {
+  } else if (!roster.length) {
     botList.innerHTML = '<div class="empty">还没有 PersonaBot，点右上角「创建」或去 DSH「Bot 模式」</div>';
   } else {
-    for (const bot of botsState.bots) {
+    const hint = document.createElement('div');
+    hint.className = 'bot-picker-hint';
+    hint.textContent = '点选一位助手，聊天与历史会跟他走';
+    botList.appendChild(hint);
+    for (const bot of roster) {
       const row = document.createElement('div');
-      row.className = 'bot';
+      const on = bot.slug === selectedBotSlug;
+      row.className = 'bot pick' + (on ? ' on' : '');
+      row.dataset.slug = bot.slug;
+      row.title = on ? '当前聊天对象' : '设为聊天对象';
       const initial = (bot.name || '?').trim().slice(0, 1).toUpperCase();
       const mem = bot.memory ? `${bot.memory.files} 个记忆文件` : '无记忆';
       const soul = bot.memory && bot.memory.soul ? bot.memory.soul : '';
       row.innerHTML = `<div class="avatar">${initial}</div>
-        <div class="body"><b>${bot.name}</b><span>${mem}${soul ? ' · ' + soul : ''}</span></div>
-        <span class="tag">${botsState.active > 0 ? '工作中' : '待命'}</span>`;
+        <div class="body"><b>${escapeHtml(bot.name || bot.slug)}</b><span>${mem}${soul ? ' · ' + escapeHtml(soul) : ''}</span></div>
+        <span class="tag">${on ? '聊天中' : (botsState.active > 0 ? '工作中' : '待命')}</span>`;
+      row.addEventListener('click', () => {
+        setSelectedBotSlug(bot.slug, { persist: true });
+        chatTarget = 'bot';
+        render(state);
+      });
       botList.appendChild(row);
     }
   }
-  const mine = botsState.dm && botsState.dm.bot ? botsState.dm.bot : null;
+  const mine = selectedBotSlug || (botsState.dm && botsState.dm.bot ? botsState.dm.bot : null);
   const mySchedules = (botsState.schedules || []).filter((x) => !mine || x.bot === mine);
   const schedList = $('#scheduleList');
   schedList.innerHTML = '';
@@ -774,12 +808,11 @@ function render(s) {
     for (const item of mySchedules) {
       const row = document.createElement('div');
       row.className = 'sched' + (item.enabled ? '' : ' off');
-      row.innerHTML = `<span>${item.title}</span><span class="kind">${item.kind || ''}</span>`;
+      row.innerHTML = `<span>${escapeHtml(item.title)}</span><span class="kind">${escapeHtml(item.kind || '')}</span>`;
       schedList.appendChild(row);
     }
   }
-  $('#botHint').textContent = botsState.ok ? (botsState.bots || []).length + ' 位' : '未连接';
-  const createPulse = s.botCreate;
+  $('#botHint').textContent = botsState.ok ? roster.length + ' 位' : '未连接';
   if (createPulse && createPulse.line) {
     const note = document.createElement('div');
     note.className = 'memory';
@@ -790,20 +823,29 @@ function render(s) {
 
   $('#scheduleHint').textContent = mySchedules.filter((x) => x.enabled).length + ' 个启用';
 
-  // chat target (session vs persona bot)
+  // chat target (session vs selected persona bot)
   const bridge = s.botBridge || { ok: false };
-  if (bridge.ok) {
+  if (bridge.ok || roster.length) {
     if (!chatTarget || chatTarget === 'session') chatTarget = 'bot';
   } else {
     chatTarget = 'session';
   }
-  $('#targetBtn').textContent = chatTarget === 'bot' ? 'Bot' : '会话';
+  const selectedBot = roster.find((b) => b.slug === selectedBotSlug);
+  const botLabel = selectedBot ? shortBotLabel(selectedBot.name || selectedBot.slug) : 'Bot';
+  $('#targetBtn').textContent = chatTarget === 'bot' ? botLabel : '会话';
   $('#targetBtn').classList.toggle('bot', chatTarget === 'bot');
-  $('#targetBtn').disabled = !bridge.ok;
-  $('#targetBtn').title = bridge.ok ? '点击切换：发给 PersonaBot / 当前会话' : 'Bot 模式未连接';
+  $('#targetBtn').disabled = !(bridge.ok || roster.length);
+  $('#targetBtn').title = (bridge.ok || roster.length)
+    ? (chatTarget === 'bot'
+        ? `发给 ${selectedBot ? (selectedBot.name || selectedBot.slug) : 'PersonaBot'}（Bot 页可换）`
+        : '点击切换：发给 PersonaBot / 当前会话')
+    : 'Bot 模式未连接';
 
-  // conversation history
-  const hist = s.botHistory || [];
+  // conversation history (filter to selected bot when known)
+  const histAll = s.botHistory || [];
+  const hist = selectedBotSlug
+    ? histAll.filter((item) => !item.bot || item.bot === selectedBotSlug)
+    : histAll;
   const histShown = histExpanded ? hist : hist.slice(-4);
   const histList = $('#historyList');
   histList.innerHTML = '';
@@ -903,6 +945,34 @@ $('#createBotSubmit')?.addEventListener('click', () => {
 });
 
 let chatTarget = 'session';
+const BOT_SLUG_KEY = 'pet-one.selectedBotSlug';
+let selectedBotSlug = null;
+let lastAppliedCreateKey = '';
+try {
+  selectedBotSlug = localStorage.getItem(BOT_SLUG_KEY) || null;
+} catch (_) { /* private mode */ }
+
+function shortBotLabel(name) {
+  const s = String(name || 'Bot').trim();
+  return s.length <= 4 ? s : s.slice(0, 4);
+}
+function resolveSelectedBotSlug(roster, current, dm) {
+  const slugs = new Set((roster || []).map((b) => b && b.slug).filter(Boolean));
+  if (current && (slugs.size === 0 || slugs.has(current))) return current;
+  if (dm && dm.bot && (slugs.size === 0 || slugs.has(dm.bot))) return dm.bot;
+  return (roster && roster[0] && roster[0].slug) || null;
+}
+function setSelectedBotSlug(slug, { persist } = {}) {
+  const next = typeof slug === 'string' && slug.trim() ? slug.trim() : null;
+  selectedBotSlug = next;
+  try {
+    if (next) localStorage.setItem(BOT_SLUG_KEY, next);
+    else localStorage.removeItem(BOT_SLUG_KEY);
+  } catch (_) { /* ignore */ }
+  if (persist) {
+    post('select-bot', next ? { botSlug: next } : {});
+  }
+}
 
 let histExpanded = false;
 function replayIntro() {
@@ -956,7 +1026,9 @@ function sendChat() {
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
-  post('chat', { text, target: chatTarget });
+  const payload = { text, target: chatTarget };
+  if (chatTarget === 'bot' && selectedBotSlug) payload.botSlug = selectedBotSlug;
+  post('chat', payload);
 }
 $('#histToggle').addEventListener('click', () => {
   histExpanded = !histExpanded;

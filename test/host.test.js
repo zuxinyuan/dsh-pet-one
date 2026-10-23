@@ -533,3 +533,133 @@ test('chat desktop command without target stays session chat', () => {
   assert.deepEqual(called, { text: '会话消息', options: {} })
   service.close()
 })
+
+test('store persists selectedBotSlug', () => {
+  const dir = tempDir()
+  const store = new Store(dir)
+  store.get().selectedBotSlug = 'bot-alpha'
+  store.close()
+  const reopened = new Store(dir)
+  assert.equal(reopened.get().selectedBotSlug, 'bot-alpha')
+  reopened.close()
+})
+
+test('selectBot persists and appears in view / live.json', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.botSnapshot = {
+    ok: true,
+    bots: [
+      { slug: 'bot-a', name: '甲' },
+      { slug: 'bot-b', name: '乙' },
+    ],
+    schedules: [],
+    dm: { bot: 'bot-a' },
+  }
+  const result = service.selectBot('bot-b')
+  assert.equal(result.ok, true)
+  assert.equal(result.botSlug, 'bot-b')
+  assert.equal(service.view().selectedBotSlug, 'bot-b')
+  service.writeLive()
+  const live = JSON.parse(readFileSync(join(dir, 'live.json'), 'utf8'))
+  assert.equal(live.selectedBotSlug, 'bot-b')
+  assert.equal(live.bots.ok, true)
+  assert.equal(live.bots.bots.length, 2)
+  service.close()
+})
+
+test('chat without botSlug uses persisted selectedBotSlug', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.botSnapshot = {
+    ok: true,
+    bots: [
+      { slug: 'bot-first', name: 'First' },
+      { slug: 'bot-picked', name: 'Picked' },
+    ],
+    schedules: [],
+    dm: { bot: 'bot-first' },
+  }
+  service.selectBot('bot-picked')
+  service.ctx = { get: () => undefined }
+  const result = service.chat('你好', { target: 'bot' })
+  assert.equal(result.ok, true)
+  assert.equal(result.botSlug, 'bot-picked')
+  service.close()
+})
+
+test('chat options.botSlug overrides store selection', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.botSnapshot = {
+    ok: true,
+    bots: [
+      { slug: 'bot-store', name: 'Store' },
+      { slug: 'bot-opt', name: 'Opt' },
+    ],
+    schedules: [],
+    dm: null,
+  }
+  service.selectBot('bot-store')
+  service.ctx = { get: () => undefined }
+  const result = service.chat('覆盖', { target: 'bot', botSlug: 'bot-opt' })
+  assert.equal(result.botSlug, 'bot-opt')
+  service.close()
+})
+
+test('select-bot desktop command is drained into selectBot', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.selectBot = (slug) => {
+    called = slug
+    return { ok: true, botSlug: slug }
+  }
+  writeFileSync(
+    join(dir, 'commands.json'),
+    JSON.stringify([{ kind: 'select-bot', botSlug: 'bot-chosen' }]),
+  )
+  service.drainDesktopCommands()
+  assert.equal(called, 'bot-chosen')
+  service.close()
+})
+
+test('createBot success selects the new bot', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return {
+        creations: {
+          create(input) {
+            return {
+              record: { slug: 'bot-newborn', displayName: input.displayName },
+              channelId: 'ch-new',
+            }
+          },
+        },
+      }
+    },
+  }
+  const result = service.createBot({ displayName: '新生' })
+  assert.equal(result.ok, true)
+  assert.equal(service.store.get().selectedBotSlug, 'bot-newborn')
+  assert.equal(service.view().selectedBotSlug, 'bot-newborn')
+  service.close()
+})
+
+test('resolveSelectedBotSlug falls back when stored slug left the roster', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.store.get().selectedBotSlug = 'bot-gone'
+  service.store.touch()
+  service.botSnapshot = {
+    ok: true,
+    bots: [{ slug: 'bot-still', name: 'Still' }],
+    schedules: [],
+    dm: { bot: 'bot-still' },
+  }
+  assert.equal(service.resolveSelectedBotSlug(), 'bot-still')
+  service.close()
+})

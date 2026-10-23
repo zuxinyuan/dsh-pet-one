@@ -378,6 +378,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.showBubble("正在创建「\(name)」…")
                     if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
                 }
+            case "select-bot":
+                // Empty botSlug clears selection; host falls back to DM / first bot.
+                let slug = (payload["botSlug"] as? String) ?? ""
+                var extra: [String: Any] = [:]
+                if !slug.isEmpty { extra["botSlug"] = slug }
+                self.queueCommand("select-bot", extra: extra)
+                if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
             case "drag":
                 if let dx = payload["dx"] as? Double, let dy = payload["dy"] as? Double {
                     self.movePanel(dx: dx, dy: dy)
@@ -969,6 +976,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "botHistory": snapshot["botHistory"] as? [[String: Any]] ?? [],
             "botPulse": snapshot["botPulse"] as? [String: Any] ?? NSNull(),
             "botCreate": snapshot["botCreate"] as? [String: Any] ?? NSNull(),
+            "botBridge": snapshot["botBridge"] as? [String: Any] ?? ["ok": false],
+            "selectedBotSlug": snapshot["selectedBotSlug"] as? String ?? NSNull(),
         ]
     }
 
