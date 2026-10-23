@@ -231,6 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var fishCatches = 0
     private var chatPending = false
     private var lastChatReplyAt: Double = 0
+    private var lastBotPulseAt: Double = 0
 
     private var baseSize = NSSize(width: 240, height: 240)
 
@@ -633,6 +634,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     voice.speak(text)
                 }
             }
+            if let pulse = object["botPulse"] as? [String: Any],
+               let at = pulse["at"] as? Double, at > lastBotPulseAt,
+               let line = pulse["line"] as? String {
+                lastBotPulseAt = at
+                showBubble(line)
+                voice.speak(line)
+                playState("celebrate", transientFor: 2.4)
+            }
             if infoPanel.isVisible { infoPanel.push(panelState()) }
             if let dump = ProcessInfo.processInfo.environment["PETONE_DUMP_PANEL"], !dump.isEmpty {
                 try? panelText().write(toFile: dump, atomically: true, encoding: .utf8)
@@ -917,6 +926,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "pomodoro": pomodoroEnd.map { max(0, $0.timeIntervalSinceNow) } ?? NSNull(),
             "voice": voice.enabled,
             "live2d": live2dActive,
+            "bots": snapshot["bots"] as? [String: Any] ?? ["ok": false, "bots": []],
+            "botPulse": snapshot["botPulse"] as? [String: Any] ?? NSNull(),
         ]
     }
 

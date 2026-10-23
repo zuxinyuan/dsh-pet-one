@@ -95,6 +95,15 @@ rm ~/.dsh/pet-one/page-hidden      # 恢复
 
 标记文件是宿主启动时读取的，**重启 App / dsh web 后生效**；桌面版桌宠不受影响（它读 `live.json`，宿主仍照常工作）。
 
+### Bot 集成（方案 1 + 3）
+
+![面板 Bot 页签](docs/panel-bots.png)
+
+- **看板（方案 1）**：面板新增「Bot」页签，只读 DeepSeekBot（`deepseekbot` / DSB）的数据 —— PersonaBot 名字、记忆文件数、SOUL 首行、定时任务列表与启用状态
+- **通知（方案 3）**：DSB 的定时任务触发（`bot_schedule_firings` 出现新记录）转成 `botPulse`，桌宠弹气泡 + 语音播报，同时播 celebrate 动画
+- 数据源：`~/.dsh/botharness/botharness.db`（`persona_bots` / `bot_schedules` / `bot_schedule_firings` / `channel_records`），**只读**，`node:sqlite` 内置模块
+- 失败降级：DSB 未装、库被锁、表缺失 → `bots.ok=false`，宠物完全不受影响（见 DECISIONS ADR-011）
+
 ### 桌面版功能（第二批：星穹铁道风格面板）
 
 ![星穹铁道风格面板](desktop/docs/panel-hsr.png)

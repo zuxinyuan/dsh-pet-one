@@ -321,6 +321,30 @@ header::after{background-size:200% 100%;animation:sheen 7s linear infinite}
   box-shadow:0 0 16px rgba(232,201,138,.16)}
 .pack.on::after{content:"";position:absolute;right:7px;top:7px;width:5px;height:5px;transform:rotate(45deg);background:var(--gold);box-shadow:0 0 7px var(--gold)}
 
+/* bots */
+.bot{
+  display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px dashed rgba(206,184,254,.1);
+}
+.bot:last-child{border-bottom:0}
+.bot .avatar{
+  width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;
+  border:1px solid var(--gold-dim);background:linear-gradient(160deg,rgba(232,201,138,.16),rgba(20,30,58,.7));
+  font-family:"DIN Alternate",sans-serif;font-size:13px;color:var(--gold);
+  clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,0 100%);
+}
+.bot .body{flex:1;min-width:0}
+.bot .body b{display:block;font-size:12px;color:#efe8d6}
+.bot .body span{display:block;font-size:9.5px;color:var(--muted);margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bot .tag{
+  font-size:9px;letter-spacing:.1em;padding:2px 6px;border:1px solid var(--gold-dim);color:var(--gold);
+  clip-path:polygon(0 0,calc(100% - 5px) 0,100% 5px,100% 100%,0 100%);
+}
+.sched{display:flex;align-items:center;gap:7px;padding:5px 0;font-size:11px;color:#d5d9e6}
+.sched::before{content:"◆";font-size:7px;color:var(--gold)}
+.sched.off{opacity:.45}
+.sched .kind{margin-left:auto;font-size:9px;color:var(--muted);letter-spacing:.08em}
+
 /* chat */
 footer{
   position:relative;z-index:4;display:flex;gap:6px;align-items:center;
@@ -409,6 +433,7 @@ footer::after{
     <button data-tab="grow">养成</button>
     <button data-tab="tools">工具</button>
     <button data-tab="packs">角色</button>
+    <button data-tab="bots">Bot</button>
   </nav>
 
   <main id="main">
@@ -516,6 +541,22 @@ footer::after{
         <div class="card-title">形态说明</div>
         <div class="memory">角色包来自桌面端 assets/packs 与 ~/.dsh/pet-one/packs。</div>
         <div class="memory">Live2D 由独立桌面端进程渲染，可用「Live2D 形态」启动。</div>
+      </div>
+    </section>
+    <!-- Bot -->
+    <section class="panel" data-panel="bots">
+      <div class="card gold">
+        <div class="card-title">助手阵容 <span class="hint" id="botHint"></span></div>
+        <div id="botList"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">定时任务 <span class="hint" id="scheduleHint"></span></div>
+        <div id="scheduleList"><div class="empty">读取中…</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">说明</div>
+        <div class="memory">数据来自 DeepSeekBot（DSH 的 Bot 模式插件），只读。</div>
+        <div class="memory">在 DSH 的「Bot 模式」里创建/编辑 PersonaBot，这里同步显示。</div>
       </div>
     </section>
   </main>
@@ -646,6 +687,44 @@ function render(s) {
     p.appendChild(btn);
   });
   $('#packHint').textContent = s.packId || '';
+
+  // bots
+  const botsState = s.bots || { ok: false, bots: [], schedules: [], error: 'none' };
+  const botList = $('#botList');
+  botList.innerHTML = '';
+  if (!botsState.ok) {
+    botList.innerHTML = '<div class="empty">没发现 Bot 模式数据（DeepSeekBot 未安装或未启动）</div>';
+  } else if (!(botsState.bots || []).length) {
+    botList.innerHTML = '<div class="empty">还没有 PersonaBot，去 DSH 的「Bot 模式」创建一个</div>';
+  } else {
+    for (const bot of botsState.bots) {
+      const row = document.createElement('div');
+      row.className = 'bot';
+      const initial = (bot.name || '?').trim().slice(0, 1).toUpperCase();
+      const mem = bot.memory ? `${bot.memory.files} 个记忆文件` : '无记忆';
+      const soul = bot.memory && bot.memory.soul ? bot.memory.soul : '';
+      row.innerHTML = `<div class="avatar">${initial}</div>
+        <div class="body"><b>${bot.name}</b><span>${mem}${soul ? ' · ' + soul : ''}</span></div>
+        <span class="tag">${botsState.active > 0 ? '工作中' : '待命'}</span>`;
+      botList.appendChild(row);
+    }
+  }
+  const mine = botsState.dm && botsState.dm.bot ? botsState.dm.bot : null;
+  const mySchedules = (botsState.schedules || []).filter((x) => !mine || x.bot === mine);
+  const schedList = $('#scheduleList');
+  schedList.innerHTML = '';
+  if (!mySchedules.length) {
+    schedList.innerHTML = '<div class="empty">没有定时任务</div>';
+  } else {
+    for (const item of mySchedules) {
+      const row = document.createElement('div');
+      row.className = 'sched' + (item.enabled ? '' : ' off');
+      row.innerHTML = `<span>${item.title}</span><span class="kind">${item.kind || ''}</span>`;
+      schedList.appendChild(row);
+    }
+  }
+  $('#botHint').textContent = botsState.ok ? (botsState.bots || []).length + ' 位' : '未连接';
+  $('#scheduleHint').textContent = mySchedules.filter((x) => x.enabled).length + ' 个启用';
 
   // tools state
   const live2d = !!s.live2d;

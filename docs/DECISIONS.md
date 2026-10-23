@@ -127,3 +127,40 @@
 **结论**：全部写进 `.gitignore`，仓库只保留 `scripts/fetch-live2d-assets.sh` 说明从何处获取。
 
 **代价**：clone 后不能直接构建安装器；需要先跑一次 fetch 脚本（或手动拷入）。
+
+
+---
+
+## ADR-010 宠物接入 DeepSeekBot，而不是自建渠道桥
+
+**日期**：2026-10-23　**状态**：已采纳（取代 ADR-007 的 nanobot 方案）
+
+**背景**：用户指出 DSH 自带「Bot 模式」插件（`deepseekbot` / DSB），它是 Grok Bot 的开源替代：PersonaBot、Git Memory、Groups、飞书/Slack/Discord/QQ/微信，且**大脑就是 DSH 自己**。此前我用 nanobot 从零搭渠道桥（已跑通 Telegram），方向重复。
+
+**选项**：
+1. 继续 nanobot 渠道桥 —— 能接 TG，但大脑是 nanobot，不认识用户项目，两套记忆
+2. 接入 DSB —— 同栈插件，能力完整，但 Telegram 不在其支持列表
+3. 自建 —— 重复造轮子
+
+**结论**：选 2。`lib/host/bots.js` 只读 DSB 的 SQLite（`~/.dsh/botharness/botharness.db`），面板新增「Bot」页签展示 PersonaBot 与定时任务；DSB 的定时任务触发（`bot_schedule_firings`）转成 `botPulse`，桌面弹气泡+语音。
+
+**代价**：
+- Telegram 仍需 nanobot 或后续自建（DSB 未覆盖）
+- 只读集成，无法从面板创建/编辑 Bot（在 DSB 自己的界面完成）
+- DSB 升级若改表结构，需要跟进（已用 try/catch 全面降级，不会拖垮宠物）
+
+---
+
+## ADR-011 Bot 集成必须“读失败也不影响宠物”
+
+**日期**：2026-10-23　**状态**：已采纳
+
+**背景**：DSB 的数据目录可能不存在（未安装）、SQLite 可能被写锁占用、表结构可能随版本变化。
+
+**结论**：
+- `readBots()` 任何异常都返回 `{ ok:false, error }`，永不抛出
+- 只读打开（`readOnly: true`），绝不写 DSB 的库
+- 缓存 3 秒，轮询 5 秒，`unref()` 不阻止进程退出
+- 传输内容裁剪：不传 base64 头像（改传 `hasAvatar` 布尔）、SOUL 只取首行 80 字符（`live.json` 每秒写一次，体积必须小）
+
+**代价**：面板看不到 Bot 头像原图与完整人格文本；需要看详情得去 DSB 界面。

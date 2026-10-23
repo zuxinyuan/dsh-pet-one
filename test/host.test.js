@@ -337,3 +337,35 @@ test('chat without a live agent reports a friendly error', () => {
   assert.match(service.view().chat.reply.text, /没有活跃会话/)
   service.close()
 })
+
+test('bot roster is read-only and degrades to ok:false when DSB is absent', async () => {
+  const { readBots, resetBotCache } = await import('../lib/host/bots.js')
+  resetBotCache()
+  // The real DSB home is the developer's; only assert the shape contract.
+  const snapshot = await readBots()
+  assert.equal(typeof snapshot.ok, 'boolean')
+  assert.ok(Array.isArray(snapshot.bots))
+  assert.ok(Array.isArray(snapshot.schedules))
+  if (snapshot.ok) {
+    for (const bot of snapshot.bots) {
+      assert.equal(typeof bot.slug, 'string')
+      assert.equal(typeof bot.name, 'string')
+      assert.equal(typeof bot.hasAvatar, 'boolean')
+      // Payloads must stay small: no base64 avatar, no full SOUL text.
+      assert.ok(!('avatar' in bot))
+      assert.ok((bot.memory?.soul ?? '').length <= 80)
+    }
+  } else {
+    assert.equal(typeof snapshot.error, 'string')
+  }
+})
+
+test('pet view always carries a bots field even before the first poll', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  const view = service.view()
+  assert.ok(view.bots !== undefined)
+  assert.equal(typeof view.bots.ok, 'boolean')
+  assert.ok(Array.isArray(view.bots.bots))
+  service.close()
+})
