@@ -95,7 +95,13 @@ rm ~/.dsh/pet-one/page-hidden      # 恢复
 
 标记文件是宿主启动时读取的，**重启 App / dsh web 后生效**；桌面版桌宠不受影响（它读 `live.json`，宿主仍照常工作）。
 
-### Bot 集成（方案 1 + 3）
+### Bot 集成（方案 1 + 3 + 发消息）
+
+![面板 Bot 页签与 IM 渠道](docs/panel-bot-im.png)
+
+- **面板发消息**：聊天栏左侧「Bot / 会话」切换。选 Bot 时消息经 `botharness.channels.appendMessage` 写入 PersonaBot 的 DM，再 `runtime.admitDmMessage` 唤醒它回复；未装 DSB 时自动退化为“Bot 模式没开”提示
+- **IM 渠道状态**：Bot 页签列出 DSB 支持的 11 个平台（Telegram / 飞书 / Lark / Slack / Discord / QQ / 微信 / 企业微信 / 钉钉 / Matrix / WhatsApp）与各自连接状态，数据来自 `messaging_bindings`
+- **Telegram 走 DSB 原生渠道**（polling 或 webhook），不再需要 nanobot
 
 ![面板 Bot 页签](docs/panel-bots.png)
 

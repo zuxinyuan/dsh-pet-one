@@ -399,6 +399,9 @@ footer::after{
   .app.intro *{animation:none !important}
 }
 
+.btn.target{padding:8px 9px;font-size:10px;letter-spacing:.06em;flex:0 0 auto;min-width:44px}
+.btn.target.bot{border-color:var(--gold);color:#fff2cf;box-shadow:0 0 12px rgba(232,201,138,.25)}
+
 /* misc */
 .empty{color:var(--muted);font-size:11px;padding:4px 0}
 .fade-in{animation:fade .25s ease}
@@ -554,6 +557,10 @@ footer::after{
         <div id="scheduleList"><div class="empty">读取中…</div></div>
       </div>
       <div class="card">
+        <div class="card-title">IM 渠道 <span class="hint" id="imHint"></span></div>
+        <div id="imList"></div>
+      </div>
+      <div class="card">
         <div class="card-title">说明</div>
         <div class="memory">数据来自 DeepSeekBot（DSH 的 Bot 模式插件），只读。</div>
         <div class="memory">在 DSH 的「Bot 模式」里创建/编辑 PersonaBot，这里同步显示。</div>
@@ -563,6 +570,7 @@ footer::after{
 
   <footer>
     <div class="pending" id="pending" hidden>讯息已发出，等待星轨回响…</div>
+    <button class="btn target" id="targetBtn" title="切换发送目标">会话</button>
     <input id="chatInput" maxlength="500" placeholder="向星轨发送讯息…">
     <button class="btn primary send" id="sendBtn">发送</button>
   </footer>
@@ -726,6 +734,36 @@ function render(s) {
   $('#botHint').textContent = botsState.ok ? (botsState.bots || []).length + ' 位' : '未连接';
   $('#scheduleHint').textContent = mySchedules.filter((x) => x.enabled).length + ' 个启用';
 
+  // chat target (session vs persona bot)
+  const bridge = s.botBridge || { ok: false };
+  if (bridge.ok) {
+    if (!chatTarget || chatTarget === 'session') chatTarget = 'bot';
+  } else {
+    chatTarget = 'session';
+  }
+  $('#targetBtn').textContent = chatTarget === 'bot' ? 'Bot' : '会话';
+  $('#targetBtn').classList.toggle('bot', chatTarget === 'bot');
+  $('#targetBtn').disabled = !bridge.ok;
+  $('#targetBtn').title = bridge.ok ? '点击切换：发给 PersonaBot / 当前会话' : 'Bot 模式未连接';
+
+  // IM channels reported by DSB (telegram/feishu/...) if available
+  const ims = s.imChannels || [];
+  const imList = $('#imList');
+  imList.innerHTML = '';
+  if (!ims.length) {
+    imList.innerHTML = '<div class="empty">未读取到 IM 渠道（在 DSH → Bot 模式 → 设置里连接后再看）</div>';
+  } else {
+    for (const im of ims) {
+      const row = document.createElement('div');
+      row.className = 'bot';
+      row.innerHTML = `<div class="avatar">${(im.name || '?').slice(0,1).toUpperCase()}</div>
+        <div class="body"><b>${im.name}</b><span>${im.detail || ''}</span></div>
+        <span class="tag">${im.connected ? '已连接' : '未连接'}</span>`;
+      imList.appendChild(row);
+    }
+  }
+  $('#imHint').textContent = ims.filter((x) => x.connected).length + ' / ' + ims.length;
+
   // tools state
   const live2d = !!s.live2d;
   $('#live2dBtn').textContent = live2d ? '切回' : '切换';
@@ -750,6 +788,7 @@ function render(s) {
 window.__render = render;
 
 let introTimer = 0;
+let chatTarget = 'session';
 function replayIntro() {
   const app = document.querySelector('.app');
   app.classList.remove('intro');
@@ -801,8 +840,12 @@ function sendChat() {
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
-  post('chat', { text });
+  post('chat', { text, target: chatTarget });
 }
+$('#targetBtn').addEventListener('click', () => {
+  chatTarget = chatTarget === 'bot' ? 'session' : 'bot';
+  render(state);
+});
 $('#sendBtn').addEventListener('click', sendChat);
 $('#chatInput').addEventListener('keydown', (event) => {
   if (event.key === 'Enter') sendChat();

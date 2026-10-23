@@ -927,6 +927,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "voice": voice.enabled,
             "live2d": live2dActive,
             "bots": snapshot["bots"] as? [String: Any] ?? ["ok": false, "bots": []],
+            "imChannels": snapshot["imChannels"] as? [[String: Any]] ?? [],
             "botPulse": snapshot["botPulse"] as? [String: Any] ?? NSNull(),
         ]
     }

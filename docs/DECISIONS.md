@@ -164,3 +164,42 @@
 - 传输内容裁剪：不传 base64 头像（改传 `hasAvatar` 布尔）、SOUL 只取首行 80 字符（`live.json` 每秒写一次，体积必须小）
 
 **代价**：面板看不到 Bot 头像原图与完整人格文本；需要看详情得去 DSB 界面。
+
+
+---
+
+## ADR-012 放弃 nanobot，全部走 DSB（含 Telegram）
+
+**日期**：2026-10-23　**状态**：已采纳（取代 ADR-007、ADR-008）
+
+**背景与纠错**：我此前判断“DSB 不支持 Telegram”，依据是它 README 的简介只列了 Lark/Slack/Discord/QQ/WeChat，**没有去看 `@botharness/im-provider` 的实际实现**。核实后：该包内含完整 Telegram（`TelegramApi`、`TelegramRuntime`，polling 与 webhook 双模式），并且 DSB 的 IM 渠道共 11 个：telegram / feishu / lark / slack / discord / qq / wechat / wecom / whatsapp / matrix / dingtalk。
+
+**结论**：
+- 删除 nanobot 网关与其 279MB 运行环境，会话记录归档到 `~/.dsh/pet-one/nanobot-archive/`（16KB）
+- Telegram 改由 DSB 原生渠道接入
+- “把 nanobot 的能力集成进 DSB”大部分**不再需要**：TG、定时、记忆、MCP 形态，DSB 均已具备
+
+**代价**：
+- 之前为 nanobot 写的 `docs/nanobot-assessment.md`、`docs/experiments/nanobot-minimal.md` 变成历史资料（保留，作为“为什么不走那条路”的证据）
+- 用户已创建的 `@gugu_zu_bot` token 需要 revoke
+
+---
+
+## ADR-013 面板发消息走 ChannelStore，不走 SQLite 直写
+
+**日期**：2026-10-23　**状态**：已采纳
+
+**背景**：要让桌宠说的话进入 PersonaBot 的 DM 并得到回复。
+
+**选项**：
+1. 直接往 `botharness.db` 写 `channel_records` —— 破坏一致性，DSB 有内存缓存与 live hub，写入不会被感知
+2. 走 Cordis 服务 `botharness`（`ctx.get('botharness')`）：
+   - `channels.appendMessage(channelId, message, origin)` 落盘
+   - `runtime.admitDmMessage({channelId, messageId, body})` 唤醒 bot
+3. 调 DSB 的 HTTP API —— 未发现稳定的公开路由
+
+**结论**：选 2。已在 `lib/host/dsb.js` 实现，`chat(text, {target:'bot'})` 触发。
+
+**关键设计**：**不在 `inject` 里声明 `botharness`**。若声明，DSB 被禁用/升级失败时整个宠物插件会因缺依赖而加载失败。改为运行时探测 `ctx.get('botharness')`，拿不到就退化为“Bot 模式没开”的提示。
+
+**代价**：依赖 DSB 的内部接口签名，DSB 大版本升级可能需要跟进（已 try/catch 全降级）。

@@ -369,3 +369,27 @@ test('pet view always carries a bots field even before the first poll', () => {
   assert.ok(Array.isArray(view.bots.bots))
   service.close()
 })
+
+test('chat to a bot degrades cleanly when DSB is not mounted', async () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  // ctx without a `botharness` service — the common case (DSB absent/disabled).
+  service.ctx = { get: () => undefined }
+  const result = service.chat('在吗', { target: 'bot', botSlug: 'bot-x' })
+  assert.equal(result.ok, true)
+  assert.equal(result.target, 'bot')
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const view = service.view()
+  assert.equal(view.chat.reply.error, true)
+  assert.match(view.chat.reply.text, /Bot 模式没开/)
+  service.close()
+})
+
+test('bot bridge reports unavailable without DSB', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.ctx = { get: () => undefined }
+  const view = service.view()
+  assert.equal(view.botBridge.ok, false)
+  service.close()
+})
