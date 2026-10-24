@@ -1065,3 +1065,61 @@ test('service feed, ideas and goals create, update, select and delete via deskto
   assert.equal(service.view().goals.items.some((g) => g.id === goal.goal.id), false)
   service.close()
 })
+
+test('auto-generation picks theme over quests, skips empty days and guards the daily run', async () => {
+  const { buildDailyReview, effectiveTheme, normalizeAutoGen, shouldAutoRun } = await import('../lib/host/autogen.js')
+  const { dayKey } = await import('../lib/host/store.js')
+  const today = '2026-10-24'
+  const now = Date.parse('2026-10-24T12:00:00Z')
+  assert.equal(dayKey(now), today)
+  // No activity and no theme: no filler page.
+  assert.equal(buildDailyReview({ ledger: { day: today, turns: 0, tools: 0 }, progress: { quests: { day: today, claimed: [] }, memories: [] }, feedPosts: [] }, { now, date: today }), null)
+  // Theme wins over a claimed quest.
+  const themed = buildDailyReview({ ledger: { day: today, turns: 3, tools: 1 }, progress: { quests: { day: today, claimed: ['pat5'] }, memories: [] }, feedPosts: [] }, { now, date: today, theme: '间断点分类' })
+  assert.equal(themed.page.title, '间断点分类')
+  assert.match(themed.page.insight, /间断点分类/)
+  assert.equal(themed.page.illustration.svg, 'daily')
+  assert.match(themed.feedPost.text, /今日回顾已生成/)
+  // Quest highlight without a theme.
+  const quested = buildDailyReview({ ledger: { day: today, turns: 3, tools: 0 }, progress: { quests: { day: today, claimed: ['pat5'] }, memories: [] }, feedPosts: [] }, { now, date: today })
+  assert.equal(quested.page.title, '摸摸 5 次')
+  // Theme only applies to its own date.
+  assert.equal(effectiveTheme({ enabled: true, time: '21:00', lastRunDay: null, theme: '间断点分类', themeDate: '2026-10-23' }, today), '')
+  assert.equal(effectiveTheme({ enabled: true, time: '21:00', lastRunDay: null, theme: '间断点分类', themeDate: today }, today), '间断点分类')
+  // shouldAutoRun: 21:00 local, once per day, disabled off.
+  const at2100 = new Date(2026, 9, 24, 21, 0, 0).getTime()
+  assert.equal(shouldAutoRun(at2100, { enabled: true, time: '21:00', lastRunDay: null, theme: '', themeDate: null }), true)
+  assert.equal(shouldAutoRun(at2100, { enabled: true, time: '21:00', lastRunDay: today, theme: '', themeDate: null }), false)
+  assert.equal(shouldAutoRun(at2100, { enabled: false, time: '21:00', lastRunDay: null, theme: '', themeDate: null }), false)
+  assert.equal(normalizeAutoGen({ time: 'bad' }).time, '21:00')
+})
+
+test('service auto-generation theme, generate now and scheduled once-per-day via desktop commands', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let view = service.view()
+  assert.equal(view.autoGen.time, '21:00')
+  assert.equal(view.autoGen.enabled, true)
+  // Empty day, no theme: manual generate creates nothing.
+  const empty = service.generateDailyReview({ date: '2026-10-24', now: Date.parse('2026-10-24T12:00:00Z') })
+  assert.equal(empty.ok, false)
+  assert.equal(empty.error, 'no-activity')
+  // Set a theme via desktop command, then generate now via desktop command.
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'set-auto-theme', theme: '间断点分类', date: '2026-10-24' }]))
+  service.drainDesktopCommands()
+  assert.equal(service.view().autoGen.theme, '间断点分类')
+  // Generate for the themed date directly, so the test does not depend on the machine's today.
+  const generated = service.generateDailyReview({ date: '2026-10-24', now: Date.parse('2026-10-24T12:00:00Z') })
+  assert.equal(generated.ok, true)
+  assert.equal(generated.page.title, '间断点分类')
+  assert.equal(generated.page.id, '2026-10-24')
+  assert.equal(service.view().autoGen.lastRunDay, '2026-10-24')
+  assert.equal(service.view().autoGen.theme, '')
+  assert.equal(service.view().art.pages.some((p) => p.id === '2026-10-24'), true)
+  assert.equal(service.view().feed.posts.some((p) => p.id === 'feed-daily-2026-10-24'), true)
+  // Scheduled run on the same day is refused.
+  const again = service.generateDailyReview({ date: '2026-10-24', scheduled: true, now: Date.parse('2026-10-24T12:00:00Z') })
+  assert.equal(again.ok, false)
+  assert.equal(again.error, 'already-generated-today')
+  service.close()
+})

@@ -485,6 +485,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.showBubble("正在删除每日回顾…")
                     if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
                 }
+            case "set-auto-theme":
+                if let theme = payload["theme"] as? String, !theme.isEmpty {
+                    self.queueCommand("set-auto-theme", extra: ["theme": theme])
+                    self.showBubble("正在保存今日主题…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "clear-auto-theme":
+                self.queueCommand("clear-auto-theme", extra: [:])
+                if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+            case "generate-daily-review":
+                var extraGen: [String: Any] = ["force": true]
+                if let theme = payload["theme"] as? String, !theme.isEmpty { extraGen["theme"] = theme }
+                self.queueCommand("generate-daily-review", extra: extraGen)
+                self.showBubble("正在生成今日回顾…")
+                if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
             case "create-feed":
                 if let text = payload["text"] as? String, !text.isEmpty {
                     self.queueCommand("create-feed", extra: ["text": text])
@@ -1137,6 +1152,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "art": snapshot["art"] as? [String: Any] ?? ["ok": true, "pages": []],
             "artPulse": snapshot["artPulse"] as? [String: Any] ?? NSNull(),
             "selectedArtId": snapshot["selectedArtId"] as? String ?? NSNull(),
+            "autoGen": snapshot["autoGen"] as? [String: Any] ?? ["enabled": true, "time": "21:00"],
+            "autoGenPulse": snapshot["autoGenPulse"] as? [String: Any] ?? NSNull(),
             "feed": snapshot["feed"] as? [String: Any] ?? ["ok": true, "posts": []],
             "feedPulse": snapshot["feedPulse"] as? [String: Any] ?? NSNull(),
             "ideas": snapshot["ideas"] as? [String: Any] ?? ["ok": true, "items": []],

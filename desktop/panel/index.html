@@ -742,6 +742,18 @@ footer::after{
 
     <!-- 艺术：每日回顾 HTML 页，按日期归档 -->
     <section class="panel" data-panel="art">
+      <div class="card">
+        <div class="card-title">自动生成 <span class="hint" id="autoGenHint"></span></div>
+        <div class="memory" style="padding:2px 4px">每天 21:00 定时生成今日回顾（规则提炼，未调用模型），只在 Harness 运行时才跑；当天没活动又没主题时不硬凑一页。手动填主题后，定时生成会优先用主题；也可以点「立即生成」马上生成今天的。</div>
+        <div class="create-form" style="display:block">
+          <input id="autoGenTheme" maxlength="200" placeholder="今日主题（可选），例如：间断点分类" />
+          <div class="create-actions">
+            <button class="btn mini" id="autoGenThemeClear" type="button">清除主题</button>
+            <button class="btn mini" id="autoGenThemeSave" type="button">保存主题</button>
+            <button class="btn primary mini" id="autoGenNow" type="button">立即生成今日回顾</button>
+          </div>
+        </div>
+      </div>
       <div class="card gold">
         <div class="create-row">
           <div class="card-title" style="margin:0">每日回顾 <span class="hint" id="artHint"></span></div>
@@ -816,6 +828,8 @@ let state = {
   art: { ok: true, pages: [{ id: '2026-10-17', date: '2026-10-17', day: 8, title: 'Discontinuity\nClassification\nCut', insight: 'For Day 8 today, October 17, I would hold on to one cut before you touch the nine problems: first class or second class is decided by whether both one-sided limits exist and are finite. The function value can settle whether the point is continuous, but it never decides that class.', caption: 'Two sides, two different answers — that difference is the classification.', illustration: { kind: 'svg', svg: 'discontinuity' } }] },
   selectedArtId: '2026-10-17',
   artPulse: null,
+  autoGen: { enabled: true, time: '21:00', lastRunDay: null, theme: '', themeDate: null },
+  autoGenPulse: null,
   feed: { ok: true, posts: [{ id: 'feed-panel-start', text: '动态页签已启用：这里可以手动记录动态，之后可以接定时生成。', source: 'panel', createdAt: 1761254400000 }] },
   feedPulse: null,
   ideas: { ok: true, items: [
@@ -1130,6 +1144,12 @@ function render(s) {
   renderIdeas(s);
   renderGoals(s);
 
+  // auto-generation status (art tab)
+  if ($('#autoGenHint')) {
+    const ag = s.autoGen || {};
+    $('#autoGenHint').textContent = (ag.enabled === false ? '已关闭 · ' : '') + '每天 ' + (ag.time || '21:00') + (ag.lastRunDay ? ' · 上次 ' + ag.lastRunDay : '') + (ag.theme ? ' · 主题：' + ag.theme : '');
+  }
+
   // art board (daily-review pages)
   renderArt(s);
 
@@ -1286,6 +1306,9 @@ let selectedArtId = null;
 function artSvgInline() {
   return `<svg viewBox="0 0 600 260" style="width:100%;display:block;background:#fdf8ef;border-radius:12px"><rect x="20" y="20" width="560" height="220" rx="10" fill="#fffdf6" stroke="#d8c9a8"/><line x1="300" y1="30" x2="300" y2="230" stroke="#c9b896"/><path d="M60 180 C 140 180, 180 120, 260 110" fill="none" stroke="#333" stroke-width="2.5"/><circle cx="260" cy="110" r="5" fill="#fff" stroke="#333" stroke-width="2"/><path d="M340 70 C 420 70, 470 150, 540 190" fill="none" stroke="#333" stroke-width="2.5"/><circle cx="340" cy="70" r="5" fill="#333"/></svg>`;
 }
+function dailySvgInline() {
+  return `<svg viewBox="0 0 600 260" style="width:100%;display:block;background:#fdf8ef;border-radius:12px"><rect x="20" y="20" width="560" height="220" rx="10" fill="#fffdf6" stroke="#d8c9a8"/><rect x="80" y="50" width="120" height="140" rx="8" fill="#fff" stroke="#c9b896"/><line x1="100" y1="90" x2="180" y2="90" stroke="#333" stroke-width="2"/><line x1="100" y1="120" x2="180" y2="120" stroke="#999" stroke-width="2"/><line x1="100" y1="150" x2="160" y2="150" stroke="#999" stroke-width="2"/><circle cx="380" cy="120" r="55" fill="none" stroke="#a34a00" stroke-width="3"/><path d="M355 120 L375 140 L410 100" fill="none" stroke="#a34a00" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
 function renderArt(s) {
   const list = $('#artList');
   const detail = $('#artDetail');
@@ -1318,7 +1341,7 @@ function renderArt(s) {
   }
   const illustration = current.illustration && current.illustration.kind === 'image' && current.illustration.url
     ? `<img src="${escapeHtml(current.illustration.url)}" alt="" style="width:100%;display:block;border-radius:12px" />`
-    : artSvgInline();
+    : (current.illustration && current.illustration.svg === 'daily' ? dailySvgInline() : artSvgInline());
   detail.innerHTML = `<div class="art-paper">
     <div class="art-date">${current.day ? 'Day ' + current.day + ' · ' : ''}${escapeHtml(current.date)}</div>
     <div class="art-title">${escapeHtml(current.title)}</div>
@@ -1661,6 +1684,20 @@ $('#createGoalSubmit')?.addEventListener('click', () => {
   if (targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) { alert('截止日期格式应为 YYYY-MM-DD'); return; }
   post('create-goal', { title, detail, targetDate: targetDate || null, progress: progressRaw ? Number(progressRaw) : 0 });
   const f = $('#createGoalForm'); if (f) f.hidden = true;
+});
+
+/* ---------- auto-generation: theme + generate now ---------- */
+$('#autoGenThemeSave')?.addEventListener('click', () => {
+  const theme = ($('#autoGenTheme')?.value || '').trim();
+  if (!theme) { alert('需要填写今日主题'); return; }
+  post('set-auto-theme', { theme });
+});
+$('#autoGenThemeClear')?.addEventListener('click', () => {
+  post('clear-auto-theme', {});
+});
+$('#autoGenNow')?.addEventListener('click', () => {
+  const theme = ($('#autoGenTheme')?.value || '').trim();
+  post('generate-daily-review', { theme: theme || undefined, force: true });
 });
 
 /* ---------- art board: create a daily-review page ---------- */
