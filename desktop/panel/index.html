@@ -487,8 +487,11 @@ footer::after{
     <button data-tab="tools">工具</button>
     <button data-tab="packs">角色</button>
     <button data-tab="bots">Bot</button>
-    <button data-tab="meetings">会议</button>
+    <button data-tab="feed">动态</button>
+    <button data-tab="ideas">点子</button>
+    <button data-tab="goals">目标</button>
     <button data-tab="art">艺术</button>
+    <button data-tab="meetings">会议</button>
   </nav>
 
   <main id="main">
@@ -668,6 +671,75 @@ footer::after{
     </section>
   </main>
 
+    <!-- 动态：短动态列表（面板本地数据，不写 botharness.db） -->
+    <section class="panel" data-panel="feed">
+      <div class="card gold">
+        <div class="create-row">
+          <div class="card-title" style="margin:0">动态 <span class="hint" id="feedHint"></span></div>
+          <button class="btn mini" id="createFeedBtn" type="button" title="写一条动态">写动态</button>
+        </div>
+        <div class="create-form" id="createFeedForm" hidden>
+          <textarea id="createFeedText" maxlength="1000" placeholder="写一条动态，例如今天做了什么、学到了什么"></textarea>
+          <div class="create-actions">
+            <button class="btn mini" id="createFeedCancel" type="button">取消</button>
+            <button class="btn primary mini" id="createFeedSubmit" type="button">发布动态</button>
+          </div>
+        </div>
+        <div id="feedList"></div>
+      </div>
+      <div class="memory" style="padding:2px 4px">动态是面板本地的短记录：手动写、手动删。以后接定时生成时，生成结果也用同一条目格式，不改面板结构。</div>
+    </section>
+
+    <!-- 点子：建议卡片，可改状态 -->
+    <section class="panel" data-panel="ideas">
+      <div class="card gold">
+        <div class="create-row">
+          <div class="card-title" style="margin:0">点子 <span class="hint" id="ideaHint"></span></div>
+          <button class="btn mini" id="createIdeaBtn" type="button" title="记一个点子">记点子</button>
+        </div>
+        <div class="create-form" id="createIdeaForm" hidden>
+          <input id="createIdeaTitle" maxlength="200" placeholder="点子标题" />
+          <textarea id="createIdeaDetail" maxlength="2000" placeholder="补充说明（可选）"></textarea>
+          <div class="create-actions">
+            <button class="btn mini" id="createIdeaCancel" type="button">取消</button>
+            <button class="btn primary mini" id="createIdeaSubmit" type="button">保存点子</button>
+          </div>
+        </div>
+        <div id="ideaList"></div>
+      </div>
+      <div class="card" id="ideaDetailCard">
+        <div class="card-title">本条 <span class="hint" id="ideaDetailHint"></span></div>
+        <div id="ideaDetail"></div>
+      </div>
+      <div class="memory" style="padding:2px 4px">点子状态分四种：新点子 / 尝试中 / 已完成 / 已放弃，点选一条后在详情里改状态或删除。</div>
+    </section>
+
+    <!-- 目标：长期目标（区别于养成页的每日任务） -->
+    <section class="panel" data-panel="goals">
+      <div class="card gold">
+        <div class="create-row">
+          <div class="card-title" style="margin:0">目标 <span class="hint" id="goalHint"></span></div>
+          <button class="btn mini" id="createGoalBtn" type="button" title="立一个目标">立目标</button>
+        </div>
+        <div class="create-form" id="createGoalForm" hidden>
+          <input id="createGoalTitle" maxlength="200" placeholder="目标，例如：读完一本微积分教材" />
+          <textarea id="createGoalDetail" maxlength="2000" placeholder="补充说明（可选）"></textarea>
+          <input id="createGoalDate" type="date" />
+          <input id="createGoalProgress" type="number" min="0" max="100" placeholder="进度 %（可选，默认 0）" />
+          <div class="create-actions">
+            <button class="btn mini" id="createGoalCancel" type="button">取消</button>
+            <button class="btn primary mini" id="createGoalSubmit" type="button">保存目标</button>
+          </div>
+        </div>
+        <div id="goalList"></div>
+      </div>
+      <div class="card" id="goalDetailCard">
+        <div class="card-title">本条 <span class="hint" id="goalDetailHint"></span></div>
+        <div id="goalDetail"></div>
+      </div>
+      <div class="memory" style="padding:2px 4px">目标是长期目标，带进度百分比和可选截止日期；养成页的每日任务是当天宠物任务，两者分开记。</div>
+    </section>
+
     <!-- 艺术：每日回顾 HTML 页，按日期归档 -->
     <section class="panel" data-panel="art">
       <div class="card gold">
@@ -743,7 +815,18 @@ let state = {
   meetingPulse: null,
   art: { ok: true, pages: [{ id: '2026-10-17', date: '2026-10-17', day: 8, title: 'Discontinuity\nClassification\nCut', insight: 'For Day 8 today, October 17, I would hold on to one cut before you touch the nine problems: first class or second class is decided by whether both one-sided limits exist and are finite. The function value can settle whether the point is continuous, but it never decides that class.', caption: 'Two sides, two different answers — that difference is the classification.', illustration: { kind: 'svg', svg: 'discontinuity' } }] },
   selectedArtId: '2026-10-17',
-  artPulse: null
+  artPulse: null,
+  feed: { ok: true, posts: [{ id: 'feed-panel-start', text: '动态页签已启用：这里可以手动记录动态，之后可以接定时生成。', source: 'panel', createdAt: 1761254400000 }] },
+  feedPulse: null,
+  ideas: { ok: true, items: [
+    { id: 'idea-art-auto', title: '每日回顾自动生成', detail: '每天定时从当天内容提炼一页艺术回顾，而不是手动创建。', status: 'new', createdAt: 1761254400000 },
+    { id: 'idea-art-image', title: '把插画换成指定图片或生图服务', detail: '艺术页目前是内联 SVG 示意图；以后给页面填 image URL，或接一个生图服务。', status: 'new', createdAt: 1761254400000 },
+  ] },
+  ideaPulse: null,
+  selectedIdeaId: 'idea-art-auto',
+  goals: { ok: true, items: [{ id: 'goal-example', title: '示例目标：每天读一点', detail: '这是一个示例，删掉它并换成你自己的目标。', targetDate: null, progress: 0, status: 'active', createdAt: 1761254400000 }] },
+  goalPulse: null,
+  selectedGoalId: 'goal-example'
 };
 
 function escapeHtml(value) {
@@ -1042,11 +1125,160 @@ function render(s) {
   // meetings (DSB calendar source)
   renderMeetings(s);
 
+  // feed / ideas / goals (Muse-like tabs, panel-local data)
+  renderFeed(s);
+  renderIdeas(s);
+  renderGoals(s);
+
   // art board (daily-review pages)
   renderArt(s);
 
   // chat
   $('#pending').hidden = !(s.chat && s.chat.pending);
+}
+
+/* ---------- feed / ideas / goals ---------- */
+function fmtDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return d.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function renderFeed(s) {
+  const list = $('#feedList');
+  if (!list) return;
+  const posts = (s.feed && Array.isArray(s.feed.posts)) ? s.feed.posts : [];
+  $('#feedHint').textContent = posts.length ? posts.length + ' 条' : '';
+  list.innerHTML = '';
+  if (!posts.length) {
+    list.innerHTML = '<div class="empty">还没有动态，点右上角「写动态」写第一条。</div>';
+    return;
+  }
+  for (const post of posts) {
+    const row = document.createElement('div');
+    row.className = 'bot';
+    row.innerHTML = `<div class="body"><b>${escapeHtml(post.source || 'manual')}</b><span>${escapeHtml(post.text)}</span><span class="hint">${fmtDate(post.createdAt)}</span></div><button class="btn mini" type="button">删除</button>`;
+    row.querySelector('button').addEventListener('click', () => {
+      if (!window.confirm('确定删除这条动态吗？')) return;
+      post('delete-feed', { feedId: post.id });
+    });
+    list.appendChild(row);
+  }
+  if (s.feedPulse && s.feedPulse.line) {
+    const note = document.createElement('div');
+    note.className = 'memory';
+    note.textContent = s.feedPulse.line;
+    list.prepend(note);
+  }
+}
+let selectedIdeaId = null;
+const IDEA_STATUS_LABEL = { new: '新点子', trying: '尝试中', done: '已完成', dismissed: '已放弃' };
+function renderIdeas(s) {
+  const list = $('#ideaList');
+  const detail = $('#ideaDetail');
+  if (!list || !detail) return;
+  const items = (s.ideas && Array.isArray(s.ideas.items)) ? s.ideas.items : [];
+  if (selectedIdeaId === null) selectedIdeaId = s.selectedIdeaId || (items[0] && items[0].id) || null;
+  if (selectedIdeaId && !items.some((i) => i.id === selectedIdeaId)) selectedIdeaId = items[0] ? items[0].id : null;
+  $('#ideaHint').textContent = items.length ? items.length + ' 条' : '';
+  $('#ideaDetailHint').textContent = selectedIdeaId || '';
+  list.innerHTML = '';
+  if (!items.length) {
+    list.innerHTML = '<div class="empty">还没有点子，点右上角「记点子」记第一条。</div>';
+  } else {
+    for (const item of items) {
+      const row = document.createElement('div');
+      row.className = 'bot art-row' + (item.id === selectedIdeaId ? ' on' : '');
+      row.innerHTML = `<div class="body"><b>${escapeHtml(item.title)}</b><span>${escapeHtml(item.detail || '')}</span></div><span class="tag">${IDEA_STATUS_LABEL[item.status] || item.status}</span>`;
+      row.addEventListener('click', () => {
+        selectedIdeaId = item.id;
+        post('select-idea', { ideaId: item.id });
+        render(state);
+      });
+      list.appendChild(row);
+    }
+  }
+  const current = items.find((i) => i.id === selectedIdeaId);
+  if (!current) {
+    detail.innerHTML = '<div class="empty">点上面一条查看详情。</div>';
+    return;
+  }
+  detail.innerHTML = `<div class="body"><b>${escapeHtml(current.title)}</b><span>${escapeHtml(current.detail || '')}</span></div>
+    <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap">
+      ${Object.keys(IDEA_STATUS_LABEL).map((st) => `<button class="btn mini${current.status === st ? ' primary' : ''}" data-idea-status="${st}" type="button">${IDEA_STATUS_LABEL[st]}</button>`).join('')}
+      <button class="btn mini" id="ideaDeleteBtn" type="button">删除</button>
+    </div>`;
+  detail.querySelectorAll('[data-idea-status]').forEach((btn) => {
+    btn.addEventListener('click', () => post('update-idea', { ideaId: current.id, status: btn.dataset.ideaStatus }));
+  });
+  $('#ideaDeleteBtn')?.addEventListener('click', () => {
+    if (!window.confirm('确定删除这个点子吗？')) return;
+    post('delete-idea', { ideaId: current.id });
+  });
+  if (s.ideaPulse && s.ideaPulse.line) {
+    const note = document.createElement('div');
+    note.className = 'memory';
+    note.textContent = s.ideaPulse.line;
+    detail.prepend(note);
+  }
+}
+let selectedGoalId = null;
+const GOAL_STATUS_LABEL = { active: '进行中', done: '已完成', paused: '暂停' };
+function renderGoals(s) {
+  const list = $('#goalList');
+  const detail = $('#goalDetail');
+  if (!list || !detail) return;
+  const items = (s.goals && Array.isArray(s.goals.items)) ? s.goals.items : [];
+  if (selectedGoalId === null) selectedGoalId = s.selectedGoalId || (items[0] && items[0].id) || null;
+  if (selectedGoalId && !items.some((i) => i.id === selectedGoalId)) selectedGoalId = items[0] ? items[0].id : null;
+  $('#goalHint').textContent = items.length ? items.length + ' 条' : '';
+  $('#goalDetailHint').textContent = selectedGoalId || '';
+  list.innerHTML = '';
+  if (!items.length) {
+    list.innerHTML = '<div class="empty">还没有目标，点右上角「立目标」立第一个。</div>';
+  } else {
+    for (const item of items) {
+      const row = document.createElement('div');
+      row.className = 'bot art-row' + (item.id === selectedGoalId ? ' on' : '');
+      row.innerHTML = `<div class="body"><b>${escapeHtml(item.title)}</b><span>${item.targetDate ? escapeHtml(item.targetDate) + ' · ' : ''}${item.progress}%</span></div><span class="tag">${GOAL_STATUS_LABEL[item.status] || item.status}</span>`;
+      row.addEventListener('click', () => {
+        selectedGoalId = item.id;
+        post('select-goal', { goalId: item.id });
+        render(state);
+      });
+      list.appendChild(row);
+    }
+  }
+  const current = items.find((i) => i.id === selectedGoalId);
+  if (!current) {
+    detail.innerHTML = '<div class="empty">点上面一条查看详情。</div>';
+    return;
+  }
+  detail.innerHTML = `<div class="body"><b>${escapeHtml(current.title)}</b><span>${escapeHtml(current.detail || '')}</span><span class="hint">${current.targetDate ? '截止 ' + escapeHtml(current.targetDate) + ' · ' : ''}进度 ${current.progress}%</span></div>
+    <div class="bar" style="margin-top:10px"><i style="width:${current.progress}%"></i></div>
+    <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <input id="goalProgressInput" type="number" min="0" max="100" value="${current.progress}" style="width:70px" />
+      <button class="btn mini" id="goalProgressBtn" type="button">更新进度</button>
+      ${Object.keys(GOAL_STATUS_LABEL).map((st) => `<button class="btn mini${current.status === st ? ' primary' : ''}" data-goal-status="${st}" type="button">${GOAL_STATUS_LABEL[st]}</button>`).join('')}
+      <button class="btn mini" id="goalDeleteBtn" type="button">删除</button>
+    </div>`;
+  $('#goalProgressBtn')?.addEventListener('click', () => {
+    const v = Number($('#goalProgressInput')?.value);
+    if (!Number.isFinite(v)) return;
+    post('update-goal', { goalId: current.id, progress: v });
+  });
+  detail.querySelectorAll('[data-goal-status]').forEach((btn) => {
+    btn.addEventListener('click', () => post('update-goal', { goalId: current.id, status: btn.dataset.goalStatus }));
+  });
+  $('#goalDeleteBtn')?.addEventListener('click', () => {
+    if (!window.confirm('确定删除这个目标吗？')) return;
+    post('delete-goal', { goalId: current.id });
+  });
+  if (s.goalPulse && s.goalPulse.line) {
+    const note = document.createElement('div');
+    note.className = 'memory';
+    note.textContent = s.goalPulse.line;
+    detail.prepend(note);
+  }
 }
 
 /* ---------- art board (daily-review pages) ---------- */
@@ -1398,6 +1630,37 @@ $('#targetBtn').addEventListener('click', () => {
 $('#sendBtn').addEventListener('click', sendChat);
 $('#chatInput').addEventListener('keydown', (event) => {
   if (event.key === 'Enter') sendChat();
+});
+
+/* ---------- feed / ideas / goals: create forms ---------- */
+$('#createFeedBtn')?.addEventListener('click', () => { const f = $('#createFeedForm'); if (f) f.hidden = !f.hidden; });
+$('#createFeedCancel')?.addEventListener('click', () => { const f = $('#createFeedForm'); if (f) f.hidden = true; });
+$('#createFeedSubmit')?.addEventListener('click', () => {
+  const text = ($('#createFeedText')?.value || '').trim();
+  if (!text) { alert('需要写动态内容'); return; }
+  post('create-feed', { text });
+  const f = $('#createFeedForm'); if (f) f.hidden = true;
+});
+$('#createIdeaBtn')?.addEventListener('click', () => { const f = $('#createIdeaForm'); if (f) f.hidden = !f.hidden; });
+$('#createIdeaCancel')?.addEventListener('click', () => { const f = $('#createIdeaForm'); if (f) f.hidden = true; });
+$('#createIdeaSubmit')?.addEventListener('click', () => {
+  const title = ($('#createIdeaTitle')?.value || '').trim();
+  const detail = ($('#createIdeaDetail')?.value || '').trim();
+  if (!title) { alert('需要填写点子标题'); return; }
+  post('create-idea', { title, detail });
+  const f = $('#createIdeaForm'); if (f) f.hidden = true;
+});
+$('#createGoalBtn')?.addEventListener('click', () => { const f = $('#createGoalForm'); if (f) f.hidden = !f.hidden; });
+$('#createGoalCancel')?.addEventListener('click', () => { const f = $('#createGoalForm'); if (f) f.hidden = true; });
+$('#createGoalSubmit')?.addEventListener('click', () => {
+  const title = ($('#createGoalTitle')?.value || '').trim();
+  const detail = ($('#createGoalDetail')?.value || '').trim();
+  const targetDate = ($('#createGoalDate')?.value || '').trim();
+  const progressRaw = ($('#createGoalProgress')?.value || '').trim();
+  if (!title) { alert('需要填写目标'); return; }
+  if (targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) { alert('截止日期格式应为 YYYY-MM-DD'); return; }
+  post('create-goal', { title, detail, targetDate: targetDate || null, progress: progressRaw ? Number(progressRaw) : 0 });
+  const f = $('#createGoalForm'); if (f) f.hidden = true;
 });
 
 /* ---------- art board: create a daily-review page ---------- */
