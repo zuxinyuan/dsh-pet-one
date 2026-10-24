@@ -236,6 +236,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var baseSize = NSSize(width: 240, height: 240)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 单实例保护：LaunchAgent 的 KeepAlive 与手动 open 可能同时发生。
+        // 检测到已有同 bundle 实例就退出，避免桌面上出现两只。
+        if let bundleId = Bundle.main.bundleIdentifier {
+            let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+                .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+            if !others.isEmpty {
+                NSApp.terminate(nil)
+                return
+            }
+        }
         ensurePetDir()
         prefs = loadPrefs()
         loadArtwork()
@@ -339,7 +349,89 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "pat", "feed", "play":
                 self.interact(action)
             case "chat":
-                if let text = payload["text"] as? String { self.sendChat(text) }
+                if let text = payload["text"] as? String {
+                    var extra: [String: Any] = ["text": text]
+                    if let target = payload["target"] as? String, !target.isEmpty {
+                        extra["target"] = target
+                    }
+                    if let botSlug = payload["botSlug"] as? String, !botSlug.isEmpty {
+                        extra["botSlug"] = botSlug
+                    }
+                    self.sendChat(text, extra: extra)
+                }
+            case "create-bot":
+                if let name = payload["displayName"] as? String {
+                    var extra: [String: Any] = ["displayName": name]
+                    if let persona = payload["persona"] as? String, !persona.isEmpty {
+                        extra["persona"] = persona
+                    }
+                    if let description = payload["description"] as? String, !description.isEmpty {
+                        extra["description"] = description
+                    }
+                    if let model = payload["model"] as? String, !model.isEmpty {
+                        extra["model"] = model
+                    }
+                    if let preset = payload["preset"] as? String, !preset.isEmpty {
+                        extra["preset"] = preset
+                    }
+                    self.queueCommand("create-bot", extra: extra)
+                    self.showBubble("正在创建「\(name)」…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "select-bot":
+                // Empty botSlug clears selection; host falls back to DM / first bot.
+                let slug = (payload["botSlug"] as? String) ?? ""
+                var extra: [String: Any] = [:]
+                if !slug.isEmpty { extra["botSlug"] = slug }
+                self.queueCommand("select-bot", extra: extra)
+                if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+            case "update-bot":
+                if let slug = payload["botSlug"] as? String, !slug.isEmpty {
+                    var extra: [String: Any] = ["botSlug": slug]
+                    if let name = payload["displayName"] as? String { extra["displayName"] = name }
+                    if let description = payload["description"] as? String { extra["description"] = description }
+                    if let model = payload["model"] as? String { extra["model"] = model }
+                    if let preset = payload["preset"] as? String { extra["preset"] = preset }
+                    if let roles = payload["roles"] as? [String] { extra["roles"] = roles }
+                    self.queueCommand("update-bot", extra: extra)
+                    if let name = payload["displayName"] as? String, !name.isEmpty {
+                        self.showBubble("正在更新「\(name)」…")
+                    } else {
+                        self.showBubble("正在更新 Bot…")
+                    }
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "delete-bot":
+                if let slug = payload["botSlug"] as? String, !slug.isEmpty {
+                    var extra: [String: Any] = ["botSlug": slug]
+                    if let erase = payload["eraseMemory"] as? Bool { extra["eraseMemory"] = erase }
+                    self.queueCommand("delete-bot", extra: extra)
+                    self.showBubble("正在删除 Bot…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "bind-im":
+                if let slug = payload["botSlug"] as? String, !slug.isEmpty {
+                    var extra: [String: Any] = ["botSlug": slug]
+                    if let kind = payload["bindKind"] as? String, !kind.isEmpty {
+                        extra["bindKind"] = kind
+                    } else if let kind = payload["kind"] as? String, !kind.isEmpty {
+                        extra["bindKind"] = kind
+                    }
+                    for key in ["providerId", "accountRef", "fingerprint", "id", "name"] {
+                        if let value = payload[key] as? String, !value.isEmpty { extra[key] = value }
+                    }
+                    if let rev = payload["expectedRevision"] as? Int {
+                        extra["expectedRevision"] = rev
+                    } else if let rev = payload["expectedRevision"] as? Double {
+                        extra["expectedRevision"] = Int(rev)
+                    }
+                    if let enabled = payload["enabled"] as? Bool { extra["enabled"] = enabled }
+                    if let inherit = payload["inheritEnabled"] as? Bool { extra["inheritEnabled"] = inherit }
+                    self.queueCommand("bind-im", extra: extra)
+                    let kind = (extra["bindKind"] as? String) ?? "bind"
+                    self.showBubble(kind == "unbind" ? "正在解绑 IM…" : "正在绑定 IM…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
             case "drag":
                 if let dx = payload["dx"] as? Double, let dy = payload["dy"] as? Double {
                     self.movePanel(dx: dx, dy: dy)
@@ -360,6 +452,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.launchLive2D()
             case "close":
                 self.infoPanel.orderOut(nil)
+            case "meeting":
+                if let action = payload["action"] as? String, !action.isEmpty,
+                   let meetingId = payload["meetingId"] as? String, !meetingId.isEmpty {
+                    var extra: [String: Any] = ["action": action, "meetingId": meetingId]
+                    if let joinUrl = payload["joinUrl"] as? String, !joinUrl.isEmpty { extra["joinUrl"] = joinUrl }
+                    if let text = payload["text"] as? String, !text.isEmpty { extra["text"] = text }
+                    self.queueCommand("meeting", extra: extra)
+                    self.showBubble(action == "open" ? "正在打开会议…" : "会议操作已发送…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
             case "dsh":
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/DeepSeek Harness.app"))
             default:
@@ -930,14 +1032,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "imChannels": snapshot["imChannels"] as? [[String: Any]] ?? [],
             "botHistory": snapshot["botHistory"] as? [[String: Any]] ?? [],
             "botPulse": snapshot["botPulse"] as? [String: Any] ?? NSNull(),
+            "botCreate": snapshot["botCreate"] as? [String: Any] ?? NSNull(),
+            "botBridge": snapshot["botBridge"] as? [String: Any] ?? ["ok": false],
+            "selectedBotSlug": snapshot["selectedBotSlug"] as? String ?? NSNull(),
+            "meetings": snapshot["meetings"] as? [String: Any] ?? ["ok": false, "meetings": []],
+            "meetingPulse": snapshot["meetingPulse"] as? [String: Any] ?? NSNull(),
         ]
     }
 
     // MARK: chat & tools
 
-    private func sendChat(_ text: String) {
+    private func sendChat(_ text: String, extra: [String: Any] = [:]) {
         chatPending = true
-        queueCommand("chat", extra: ["text": text])
+        var payload = extra
+        payload["text"] = text
+        queueCommand("chat", extra: payload)
         showBubble("收到，我去问问…")
         if infoPanel.isVisible { infoPanel.push(panelState()) }
     }

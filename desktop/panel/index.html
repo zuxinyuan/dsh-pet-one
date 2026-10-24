@@ -321,11 +321,34 @@ header::after{background-size:200% 100%;animation:sheen 7s linear infinite}
   box-shadow:0 0 16px rgba(232,201,138,.16)}
 .pack.on::after{content:"";position:absolute;right:7px;top:7px;width:5px;height:5px;transform:rotate(45deg);background:var(--gold);box-shadow:0 0 7px var(--gold)}
 
+
+/* create bot */
+.create-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.create-form{display:flex;flex-direction:column;gap:6px;margin:6px 0 10px;padding:8px;border:1px dashed rgba(232,201,138,.35);border-radius:6px;background:rgba(20,16,28,.35)}
+.create-form input,.create-form textarea{
+  width:100%;box-sizing:border-box;background:rgba(0,0,0,.25);border:1px solid rgba(206,184,254,.25);
+  color:#efe8d6;border-radius:4px;padding:6px 8px;font:inherit;font-size:11px;outline:none;
+}
+.create-form textarea{resize:vertical;min-height:54px}
+.create-actions{display:flex;gap:6px;justify-content:flex-end}
+.btn.mini{padding:3px 8px;font-size:10px;letter-spacing:.04em}
 /* bots */
 .bot{
   display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px dashed rgba(206,184,254,.1);
 }
 .bot:last-child{border-bottom:0}
+.bot.pick{cursor:pointer;border-radius:4px;padding:8px 6px;margin:0 -6px;border-bottom-color:transparent;
+  transition:background .15s ease,box-shadow .15s ease}
+.bot.pick:hover{background:rgba(232,201,138,.06)}
+.bot.pick.on{background:linear-gradient(160deg,rgba(232,201,138,.14),rgba(20,30,58,.55));
+  box-shadow:inset 0 0 0 1px rgba(232,201,138,.45)}
+.bot.pick.on .tag{border-color:var(--gold);background:rgba(232,201,138,.12)}
+.bot-picker-hint{font-size:9.5px;color:var(--muted);margin:2px 0 6px;letter-spacing:.04em}
+.bot-actions{display:flex;gap:4px;flex-shrink:0;align-items:center}
+.bot-actions .btn{padding:2px 6px;font-size:9px}
+.im-bind-form .hint-line{font-size:9.5px;color:var(--muted);line-height:1.4}
+.im-bind-row{display:flex;gap:6px;align-items:center;margin-top:4px}
+.im-bind-row select,.im-bind-row input{flex:1;min-width:0}
 .bot .avatar{
   width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;
   border:1px solid var(--gold-dim);background:linear-gradient(160deg,rgba(232,201,138,.16),rgba(20,30,58,.7));
@@ -454,6 +477,7 @@ footer::after{
     <button data-tab="tools">工具</button>
     <button data-tab="packs">角色</button>
     <button data-tab="bots">Bot</button>
+    <button data-tab="meetings">会议</button>
   </nav>
 
   <main id="main">
@@ -566,7 +590,33 @@ footer::after{
     <!-- Bot -->
     <section class="panel" data-panel="bots">
       <div class="card gold">
-        <div class="card-title">助手阵容 <span class="hint" id="botHint"></span></div>
+        <div class="create-row">
+          <div class="card-title" style="margin:0">助手阵容 <span class="hint" id="botHint"></span></div>
+          <button class="btn mini" id="createBotBtn" type="button" title="在面板内创建 PersonaBot">创建</button>
+        </div>
+        <div class="create-form" id="createBotForm" hidden>
+          <input id="createBotName" maxlength="64" placeholder="名称，例如：小研" />
+          <textarea id="createBotPersona" maxlength="4000" placeholder="人格设定（可选）。留空则用空白人格。"></textarea>
+          <input id="createBotModel" maxlength="256" placeholder="模型（可选）。留空则用 Host 默认；与 DSB creations.create 的 model 字段一致" />
+          <div class="create-actions">
+            <button class="btn mini" id="createBotCancel" type="button">取消</button>
+            <button class="btn primary mini" id="createBotSubmit" type="button">确认创建</button>
+          </div>
+        </div>
+        <div class="create-form" id="editBotForm" hidden>
+          <input type="hidden" id="editBotSlug" />
+          <input id="editBotName" maxlength="64" placeholder="名称" />
+          <textarea id="editBotDescription" maxlength="160" placeholder="简介（可选，≤160 字）"></textarea>
+          <input id="editBotModel" maxlength="256" placeholder="模型（可选）" />
+          <label class="hint-line" style="display:flex;gap:6px;align-items:center;font-size:10px;color:var(--muted)">
+            <input type="checkbox" id="editEraseMemory" /> 删除时同时抹掉 Memory（危险）
+          </label>
+          <div class="create-actions">
+            <button class="btn mini" id="editBotCancel" type="button">取消</button>
+            <button class="btn mini" id="editBotDelete" type="button" title="经 DSB deletions.confirm">删除</button>
+            <button class="btn primary mini" id="editBotSubmit" type="button">保存</button>
+          </div>
+        </div>
         <div id="botList"></div>
       </div>
       <div class="card">
@@ -576,6 +626,25 @@ footer::after{
       <div class="card">
         <div class="card-title">IM 渠道 <span class="hint" id="imHint"></span></div>
         <div id="imList"></div>
+        <div class="create-form im-bind-form" id="bindImForm">
+          <div class="hint-line">绑定走 DSB <code>externalMessaging.identity</code>（需已有 providerId / accountRef / fingerprint；不解包 nanobot）。解绑用下方已绑定行。</div>
+          <div class="im-bind-row">
+            <select id="bindImPlatform" title="平台（自动填 providerId）">
+              <option value="telegram">Telegram</option>
+              <option value="feishu">飞书</option>
+              <option value="slack">Slack</option>
+              <option value="discord">Discord</option>
+              <option value="qq">QQ</option>
+              <option value="weixin">微信</option>
+            </select>
+            <input id="bindImProvider" maxlength="128" placeholder="providerId，如 dsh-im/telegram" />
+          </div>
+          <input id="bindImAccount" maxlength="512" placeholder="accountRef" />
+          <input id="bindImFingerprint" maxlength="64" placeholder="fingerprint（64 位 hex）" />
+          <div class="create-actions">
+            <button class="btn primary mini" id="bindImSubmit" type="button">绑定到当前 Bot</button>
+          </div>
+        </div>
       </div>
       <div class="card">
         <div class="card-title">会话历史
@@ -584,9 +653,18 @@ footer::after{
         </div>
         <div id="historyList"><div class="empty">读取中…</div></div>
       </div>
-      <div class="memory" style="padding:2px 4px">只读同步自 DeepSeekBot；在「Bot 模式」里创建与编辑。</div>
+      <div class="memory" style="padding:2px 4px">阵容同步自 DeepSeekBot；点选 / 创建 / 编辑 / 删除 / IM 绑定均走 DSB Cordis API（不写 botharness.db）。</div>
     </section>
   </main>
+
+    <!-- 会议：今日 / 即将开始的会议（DSB 日历源） -->
+    <section class="panel" data-panel="meetings">
+      <div class="card gold">
+        <div class="card-title">今日 / 即将开始 <span class="hint" id="meetingHint"></span></div>
+        <div id="meetingList"></div>
+      </div>
+      <div class="memory" style="padding:2px 4px">会议来自 DSB 日历：点选可加入 / 打开链接 / 会中发消息。DSB 未连日历时显示空态，宠物照常工作。</div>
+    </section>
 
   <footer>
     <div class="pending" id="pending" hidden>讯息已发出，等待星轨回响…</div>
@@ -622,7 +700,9 @@ let state = {
   packId: 'whale-girl',
   chat: { pending: false },
   pomodoro: null,
-  voice: true
+  voice: true,
+  meetings: { ok: false, reason: 'pending', meetings: [] },
+  meetingPulse: null
 };
 
 function escapeHtml(value) {
@@ -720,28 +800,64 @@ function render(s) {
   });
   $('#packHint').textContent = s.packId || '';
 
-  // bots
+  // bots + multi-bot selector
   const botsState = s.bots || { ok: false, bots: [], schedules: [], error: 'none' };
+  const roster = botsState.bots || [];
+  const createPulse = s.botCreate;
+  if (createPulse && createPulse.ok && createPulse.botSlug) {
+    const createKey = String(createPulse.at || '') + ':' + createPulse.botSlug;
+    if (createKey !== lastAppliedCreateKey) {
+      lastAppliedCreateKey = createKey;
+      setSelectedBotSlug(createPulse.botSlug, { persist: true });
+    }
+  }
+  // Prefer local click / localStorage; seed from host only when local is empty or stale.
+  const hostSlug = (typeof s.selectedBotSlug === 'string' && s.selectedBotSlug)
+    || (typeof s.botBridge?.botSlug === 'string' && s.botBridge.botSlug)
+    || null;
+  selectedBotSlug = resolveSelectedBotSlug(roster, selectedBotSlug || hostSlug, botsState.dm);
+
   const botList = $('#botList');
   botList.innerHTML = '';
   if (!botsState.ok) {
     botList.innerHTML = '<div class="empty">没发现 Bot 模式数据（DeepSeekBot 未安装或未启动）</div>';
-  } else if (!(botsState.bots || []).length) {
-    botList.innerHTML = '<div class="empty">还没有 PersonaBot，去 DSH 的「Bot 模式」创建一个</div>';
+  } else if (!roster.length) {
+    botList.innerHTML = '<div class="empty">还没有 PersonaBot，点右上角「创建」或去 DSH「Bot 模式」</div>';
   } else {
-    for (const bot of botsState.bots) {
+    const hint = document.createElement('div');
+    hint.className = 'bot-picker-hint';
+    hint.textContent = '点选一位助手，聊天与历史会跟他走';
+    botList.appendChild(hint);
+    for (const bot of roster) {
       const row = document.createElement('div');
-      row.className = 'bot';
+      const on = bot.slug === selectedBotSlug;
+      row.className = 'bot pick' + (on ? ' on' : '');
+      row.dataset.slug = bot.slug;
+      row.title = on ? '当前聊天对象' : '设为聊天对象';
       const initial = (bot.name || '?').trim().slice(0, 1).toUpperCase();
       const mem = bot.memory ? `${bot.memory.files} 个记忆文件` : '无记忆';
       const soul = bot.memory && bot.memory.soul ? bot.memory.soul : '';
+      const model = bot.model ? ' · ' + escapeHtml(bot.model) : '';
       row.innerHTML = `<div class="avatar">${initial}</div>
-        <div class="body"><b>${bot.name}</b><span>${mem}${soul ? ' · ' + soul : ''}</span></div>
-        <span class="tag">${botsState.active > 0 ? '工作中' : '待命'}</span>`;
+        <div class="body"><b>${escapeHtml(bot.name || bot.slug)}</b><span>${mem}${soul ? ' · ' + escapeHtml(soul) : ''}${model}</span></div>
+        <div class="bot-actions">
+          <button class="btn mini bot-edit" type="button" data-slug="${escapeHtml(bot.slug)}" title="编辑 / 删除">编辑</button>
+          <span class="tag">${on ? '聊天中' : (botsState.active > 0 ? '工作中' : '待命')}</span>
+        </div>`;
+      row.addEventListener('click', (event) => {
+        if (event.target.closest('.bot-edit')) return;
+        setSelectedBotSlug(bot.slug, { persist: true });
+        chatTarget = 'bot';
+        render(state);
+      });
+      row.querySelector('.bot-edit')?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openEditBotForm(bot);
+      });
       botList.appendChild(row);
     }
   }
-  const mine = botsState.dm && botsState.dm.bot ? botsState.dm.bot : null;
+  const mine = selectedBotSlug || (botsState.dm && botsState.dm.bot ? botsState.dm.bot : null);
   const mySchedules = (botsState.schedules || []).filter((x) => !mine || x.bot === mine);
   const schedList = $('#scheduleList');
   schedList.innerHTML = '';
@@ -751,27 +867,47 @@ function render(s) {
     for (const item of mySchedules) {
       const row = document.createElement('div');
       row.className = 'sched' + (item.enabled ? '' : ' off');
-      row.innerHTML = `<span>${item.title}</span><span class="kind">${item.kind || ''}</span>`;
+      row.innerHTML = `<span>${escapeHtml(item.title)}</span><span class="kind">${escapeHtml(item.kind || '')}</span>`;
       schedList.appendChild(row);
     }
   }
-  $('#botHint').textContent = botsState.ok ? (botsState.bots || []).length + ' 位' : '未连接';
+  $('#botHint').textContent = botsState.ok ? roster.length + ' 位' : '未连接';
+  const actionPulse = s.botAction;
+  const pulseLine = (createPulse && createPulse.line) || (actionPulse && actionPulse.line);
+  const pulseOk = createPulse && createPulse.line ? createPulse.ok : (actionPulse && actionPulse.ok);
+  if (pulseLine) {
+    const note = document.createElement('div');
+    note.className = 'memory';
+    note.textContent = pulseLine;
+    note.style.color = pulseOk === false ? '#ffb4b4' : 'var(--gold)';
+    botList.prepend(note);
+  }
+
   $('#scheduleHint').textContent = mySchedules.filter((x) => x.enabled).length + ' 个启用';
 
-  // chat target (session vs persona bot)
+  // chat target (session vs selected persona bot)
   const bridge = s.botBridge || { ok: false };
-  if (bridge.ok) {
+  if (bridge.ok || roster.length) {
     if (!chatTarget || chatTarget === 'session') chatTarget = 'bot';
   } else {
     chatTarget = 'session';
   }
-  $('#targetBtn').textContent = chatTarget === 'bot' ? 'Bot' : '会话';
+  const selectedBot = roster.find((b) => b.slug === selectedBotSlug);
+  const botLabel = selectedBot ? shortBotLabel(selectedBot.name || selectedBot.slug) : 'Bot';
+  $('#targetBtn').textContent = chatTarget === 'bot' ? botLabel : '会话';
   $('#targetBtn').classList.toggle('bot', chatTarget === 'bot');
-  $('#targetBtn').disabled = !bridge.ok;
-  $('#targetBtn').title = bridge.ok ? '点击切换：发给 PersonaBot / 当前会话' : 'Bot 模式未连接';
+  $('#targetBtn').disabled = !(bridge.ok || roster.length);
+  $('#targetBtn').title = (bridge.ok || roster.length)
+    ? (chatTarget === 'bot'
+        ? `发给 ${selectedBot ? (selectedBot.name || selectedBot.slug) : 'PersonaBot'}（Bot 页可换）`
+        : '点击切换：发给 PersonaBot / 当前会话')
+    : 'Bot 模式未连接';
 
-  // conversation history
-  const hist = s.botHistory || [];
+  // conversation history (filter to selected bot when known)
+  const histAll = s.botHistory || [];
+  const hist = selectedBotSlug
+    ? histAll.filter((item) => !item.bot || item.bot === selectedBotSlug)
+    : histAll;
   const histShown = histExpanded ? hist : hist.slice(-4);
   const histList = $('#historyList');
   histList.innerHTML = '';
@@ -798,23 +934,52 @@ function render(s) {
   toggle.textContent = histExpanded ? '收起' : '展开';
   toggle.style.display = hist.length > 4 ? '' : 'none';
 
-  // IM channels reported by DSB (telegram/feishu/...) if available
+  // IM channels + per-bot bindings (DSB messaging_bindings, read-only)
   const ims = s.imChannels || [];
+  const bindings = (s.imBindings || []).filter((b) => !selectedBotSlug || b.botSlug === selectedBotSlug);
   const imList = $('#imList');
   imList.innerHTML = '';
-  if (!ims.length) {
-    imList.innerHTML = '<div class="empty">未读取到 IM 渠道（在 DSH → Bot 模式 → 设置里连接后再看）</div>';
+  if (!ims.length && !bindings.length) {
+    imList.innerHTML = '<div class="empty">未读取到 IM 渠道（在 DSH → Bot 模式准备账号后，用下方表单绑定到当前 Bot）</div>';
   } else {
     for (const im of ims) {
       const row = document.createElement('div');
       row.className = 'bot';
       row.innerHTML = `<div class="avatar">${(im.name || '?').slice(0,1).toUpperCase()}</div>
-        <div class="body"><b>${im.name}</b><span>${im.detail || ''}</span></div>
+        <div class="body"><b>${escapeHtml(im.name)}</b><span>${escapeHtml(im.detail || '')}</span></div>
         <span class="tag">${im.connected ? '已连接' : '未连接'}</span>`;
       imList.appendChild(row);
     }
+    if (bindings.length) {
+      const sub = document.createElement('div');
+      sub.className = 'bot-picker-hint';
+      sub.textContent = selectedBotSlug ? '当前 Bot 的绑定' : '全部绑定';
+      imList.appendChild(sub);
+      for (const b of bindings) {
+        const row = document.createElement('div');
+        row.className = 'bot';
+        row.innerHTML = `<div class="avatar">${escapeHtml((b.platform || '?').slice(0,1).toUpperCase())}</div>
+          <div class="body"><b>${escapeHtml(b.platform)}</b><span>${escapeHtml(b.name || b.accountRef || b.id)}</span></div>
+          <div class="bot-actions">
+            <button class="btn mini im-unbind" type="button" data-id="${escapeHtml(b.id)}" data-rev="${escapeHtml(String(b.revision || 1))}" data-slug="${escapeHtml(b.botSlug || selectedBotSlug || '')}">解绑</button>
+            <span class="tag">${b.enabled ? '启用' : '停用'}</span>
+          </div>`;
+        row.querySelector('.im-unbind')?.addEventListener('click', () => {
+          const slug = row.querySelector('.im-unbind').dataset.slug;
+          if (!slug) return;
+          post('bind-im', {
+            botSlug: slug,
+            bindKind: 'unbind',
+            id: row.querySelector('.im-unbind').dataset.id,
+            expectedRevision: Number(row.querySelector('.im-unbind').dataset.rev) || 1,
+          });
+        });
+        imList.appendChild(row);
+      }
+    }
   }
-  $('#imHint').textContent = ims.filter((x) => x.connected).length + ' / ' + ims.length;
+  $('#imHint').textContent = (ims.filter((x) => x.connected).length) + ' / ' + ims.length
+    + (bindings.length ? ` · 绑 ${bindings.length}` : '');
 
   // tools state
   const live2d = !!s.live2d;
@@ -833,14 +998,237 @@ function render(s) {
     $('#pomoBtn').textContent = '开始';
   }
 
+  // meetings (DSB calendar source)
+  renderMeetings(s);
+
   // chat
   $('#pending').hidden = !(s.chat && s.chat.pending);
+}
+
+/* ---------- meetings (DSB calendar) ---------- */
+function renderMeetings(s) {
+  const wrap = $('#meetingList');
+  if (!wrap) return;
+  const data = s.meetings || { ok: false, reason: 'pending', meetings: [] };
+  const meetings = Array.isArray(data.meetings) ? data.meetings : [];
+  wrap.innerHTML = '';
+  const hint = $('#meetingHint');
+
+  if (!data.ok) {
+    const tip = data.reason === 'calendar-source-unavailable'
+      ? 'DSB 还没开日历。去 DeepSeek Harness 连上你的日历（Google / 飞书 / Outlook…），回到这里就能看到今日会议。'
+      : '日历暂时读不到，稍后再来看看～';
+    wrap.innerHTML = `<div class="empty">${tip}</div>`;
+    if (hint) hint.textContent = '未连接';
+    return;
+  }
+  if (!meetings.length) {
+    wrap.innerHTML = '<div class="empty">今天没有会议，享受清静吧 ☕</div>';
+    if (hint) hint.textContent = '0 场';
+    return;
+  }
+  if (hint) hint.textContent = meetings.length + ' 场';
+
+  for (const m of meetings) {
+    const row = document.createElement('div');
+    row.className = 'tool';
+    const when = m.startAt
+      ? new Date(m.startAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '';
+    const prov = m.provider ? `<span class="hint" style="margin-left:auto">${escapeHtml(m.provider)}</span>` : '';
+    row.innerHTML = `
+      <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16"/><path d="M3 9h18M8 3v4M16 3v4"/></svg></div>
+      <div class="body"><b>${escapeHtml(m.title || '未命名会议')}</b><span>${escapeHtml(when)}${m.status ? ' · ' + escapeHtml(m.status) : ''}</span></div>`;
+    const actions = document.createElement('div');
+    actions.className = 'bot-actions';
+
+    const joinBtn = document.createElement('button');
+    joinBtn.className = 'btn mini';
+    joinBtn.textContent = '加入';
+    joinBtn.onclick = () => post('meeting', { action: 'join', meetingId: m.id, joinUrl: m.joinUrl });
+
+    const openBtn = document.createElement('button');
+    openBtn.className = 'btn mini';
+    openBtn.textContent = '链接';
+    openBtn.onclick = () => post('meeting', { action: 'open', meetingId: m.id, joinUrl: m.joinUrl });
+
+    const msgBtn = document.createElement('button');
+    msgBtn.className = 'btn mini';
+    msgBtn.textContent = '发消息';
+    msgBtn.onclick = () => {
+      const text = window.prompt('会中发一句话给会议（经 DSB）：') || '';
+      const trimmed = text.trim();
+      if (trimmed) post('meeting', { action: 'message', meetingId: m.id, text: trimmed, joinUrl: m.joinUrl });
+    };
+
+    actions.append(joinBtn, openBtn, msgBtn);
+    row.append(actions);
+    wrap.appendChild(row);
+  }
+
+  // 最近一次会议操作脉冲
+  const pulse = s.meetingPulse;
+  if (pulse && pulse.line) {
+    const note = document.createElement('div');
+    note.className = 'memory';
+    note.textContent = pulse.line;
+    note.style.color = pulse.ok === false ? '#ffb4b4' : 'var(--gold)';
+    wrap.prepend(note);
+  }
 }
 
 window.__render = render;
 
 let introTimer = 0;
+
+/* ---------- create PersonaBot (via DSB Cordis, not SQLite) ---------- */
+const createForm = $('#createBotForm');
+$('#createBotBtn')?.addEventListener('click', () => {
+  if (!createForm) return;
+  createForm.hidden = !createForm.hidden;
+  if (!createForm.hidden) $('#createBotName')?.focus();
+});
+$('#createBotCancel')?.addEventListener('click', () => {
+  if (createForm) createForm.hidden = true;
+});
+$('#createBotSubmit')?.addEventListener('click', () => {
+  const name = ($('#createBotName')?.value || '').trim();
+  const persona = ($('#createBotPersona')?.value || '').trim();
+  const model = ($('#createBotModel')?.value || '').trim();
+  if (!name) {
+    $('#createBotName')?.focus();
+    return;
+  }
+  post('create-bot', {
+    displayName: name,
+    ...(persona ? { persona } : {}),
+    ...(model ? { model } : {}),
+  });
+  if ($('#createBotName')) $('#createBotName').value = '';
+  if ($('#createBotPersona')) $('#createBotPersona').value = '';
+  if ($('#createBotModel')) $('#createBotModel').value = '';
+  if (createForm) createForm.hidden = true;
+});
+
+/* ---------- edit / delete PersonaBot (registry.update + deletions) ---------- */
+const editForm = $('#editBotForm');
+function openEditBotForm(bot) {
+  if (!editForm || !bot) return;
+  if (createForm) createForm.hidden = true;
+  editForm.hidden = false;
+  if ($('#editBotSlug')) $('#editBotSlug').value = bot.slug || '';
+  if ($('#editBotName')) $('#editBotName').value = bot.name || '';
+  if ($('#editBotDescription')) $('#editBotDescription').value = bot.description || '';
+  if ($('#editBotModel')) $('#editBotModel').value = bot.model || '';
+  if ($('#editEraseMemory')) $('#editEraseMemory').checked = false;
+  $('#editBotName')?.focus();
+}
+$('#editBotCancel')?.addEventListener('click', () => {
+  if (editForm) editForm.hidden = true;
+});
+$('#editBotSubmit')?.addEventListener('click', () => {
+  const slug = ($('#editBotSlug')?.value || '').trim();
+  const name = ($('#editBotName')?.value || '').trim();
+  const description = ($('#editBotDescription')?.value || '').trim();
+  const model = ($('#editBotModel')?.value || '').trim();
+  if (!slug || !name) {
+    $('#editBotName')?.focus();
+    return;
+  }
+  post('update-bot', {
+    botSlug: slug,
+    displayName: name,
+    description,
+    ...(model ? { model } : {}),
+  });
+  if (editForm) editForm.hidden = true;
+});
+$('#editBotDelete')?.addEventListener('click', () => {
+  const slug = ($('#editBotSlug')?.value || '').trim();
+  const name = ($('#editBotName')?.value || slug).trim();
+  if (!slug) return;
+  if (!confirm(`确认删除 PersonaBot「${name}」？此操作走 DSB deletions API，不可从面板撤销。`)) return;
+  post('delete-bot', {
+    botSlug: slug,
+    eraseMemory: !!$('#editEraseMemory')?.checked,
+  });
+  if (editForm) editForm.hidden = true;
+});
+
+/* ---------- IM bind (externalMessaging.identity) ---------- */
+const platformProvider = {
+  telegram: 'dsh-im/telegram',
+  feishu: 'dsh-im/feishu',
+  slack: 'dsh-im/slack',
+  discord: 'dsh-im/discord',
+  qq: 'dsh-im/qq',
+  weixin: 'dsh-im/weixin',
+};
+$('#bindImPlatform')?.addEventListener('change', () => {
+  const platform = $('#bindImPlatform')?.value || 'telegram';
+  if ($('#bindImProvider') && !$('#bindImProvider').dataset.touched) {
+    $('#bindImProvider').value = platformProvider[platform] || ('dsh-im/' + platform);
+  }
+});
+$('#bindImProvider')?.addEventListener('input', () => {
+  if ($('#bindImProvider')) $('#bindImProvider').dataset.touched = '1';
+});
+// seed default providerId
+if ($('#bindImProvider') && !$('#bindImProvider').value) {
+  $('#bindImProvider').value = platformProvider.telegram;
+}
+$('#bindImSubmit')?.addEventListener('click', () => {
+  const slug = selectedBotSlug;
+  if (!slug) {
+    alert('请先在阵容里点选一位 Bot');
+    return;
+  }
+  const providerId = ($('#bindImProvider')?.value || '').trim();
+  const accountRef = ($('#bindImAccount')?.value || '').trim();
+  const fingerprint = ($('#bindImFingerprint')?.value || '').trim().toLowerCase();
+  if (!providerId || !accountRef || !/^[a-f0-9]{64}$/.test(fingerprint)) {
+    alert('需要有效的 providerId、accountRef 与 64 位 hex fingerprint（来自 DSB / dsh-im 账号准备）');
+    return;
+  }
+  post('bind-im', {
+    botSlug: slug,
+    bindKind: 'bind',
+    providerId,
+    accountRef,
+    fingerprint,
+  });
+});
+
 let chatTarget = 'session';
+const BOT_SLUG_KEY = 'pet-one.selectedBotSlug';
+let selectedBotSlug = null;
+let lastAppliedCreateKey = '';
+try {
+  selectedBotSlug = localStorage.getItem(BOT_SLUG_KEY) || null;
+} catch (_) { /* private mode */ }
+
+function shortBotLabel(name) {
+  const s = String(name || 'Bot').trim();
+  return s.length <= 4 ? s : s.slice(0, 4);
+}
+function resolveSelectedBotSlug(roster, current, dm) {
+  const slugs = new Set((roster || []).map((b) => b && b.slug).filter(Boolean));
+  if (current && (slugs.size === 0 || slugs.has(current))) return current;
+  if (dm && dm.bot && (slugs.size === 0 || slugs.has(dm.bot))) return dm.bot;
+  return (roster && roster[0] && roster[0].slug) || null;
+}
+function setSelectedBotSlug(slug, { persist } = {}) {
+  const next = typeof slug === 'string' && slug.trim() ? slug.trim() : null;
+  selectedBotSlug = next;
+  try {
+    if (next) localStorage.setItem(BOT_SLUG_KEY, next);
+    else localStorage.removeItem(BOT_SLUG_KEY);
+  } catch (_) { /* ignore */ }
+  if (persist) {
+    post('select-bot', next ? { botSlug: next } : {});
+  }
+}
+
 let histExpanded = false;
 function replayIntro() {
   const app = document.querySelector('.app');
@@ -893,7 +1281,9 @@ function sendChat() {
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
-  post('chat', { text, target: chatTarget });
+  const payload = { text, target: chatTarget };
+  if (chatTarget === 'bot' && selectedBotSlug) payload.botSlug = selectedBotSlug;
+  post('chat', payload);
 }
 $('#histToggle').addEventListener('click', () => {
   histExpanded = !histExpanded;

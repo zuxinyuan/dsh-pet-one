@@ -16,6 +16,7 @@ import { ActivityTracker, projectEvent, emptyRuntime } from '../lib/host/activit
 import { interact, rewardTurn, rankOf } from '../lib/host/economy.js'
 import { createSkinRegistry } from '../lib/host/skins.js'
 import { PetOneService } from '../lib/host/service.js'
+import { updatePersonaBot, deletePersonaBot, bindImChannel, resolveMeetingsSource, readMeetings, meetingAction } from '../lib/host/dsb.js'
 import { makeRoutes } from '../lib/host/routes.js'
 
 /** Fresh temp dir per test. */
@@ -391,5 +392,569 @@ test('bot bridge reports unavailable without DSB', () => {
   service.ctx = { get: () => undefined }
   const view = service.view()
   assert.equal(view.botBridge.ok, false)
+  service.close()
+})
+
+test('createBot degrades when DSB is not mounted', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.ctx = { get: () => undefined }
+  const result = service.createBot({ displayName: '小研' })
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'dsb-unavailable')
+  const view = service.view()
+  assert.equal(view.botCreate.ok, false)
+  assert.match(view.botCreate.line, /Bot 模式没开/)
+  service.close()
+})
+
+test('createBot reuses botharness.creations.create when DSB is present', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let seen = null
+  service.ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return {
+        creations: {
+          create(input, operationKey) {
+            seen = { input, operationKey }
+            return {
+              record: { slug: 'bot-testslug', displayName: input.displayName },
+              channelId: 'channel-dm-1',
+            }
+          },
+        },
+      }
+    },
+  }
+  const result = service.createBot({
+    displayName: '小研',
+    persona: '你是助手',
+    model: 'deepseek/deepseek-chat',
+    preset: 'default-plan',
+  })
+  assert.equal(result.ok, true)
+  assert.equal(result.botSlug, 'bot-testslug')
+  assert.equal(seen.input.displayName, '小研')
+  assert.equal(seen.input.persona, '你是助手')
+  assert.equal(seen.input.model, 'deepseek/deepseek-chat')
+  assert.equal(seen.input.preset, 'default-plan')
+  assert.match(seen.operationKey, /^petone-[a-f0-9]{32}$/)
+  const view = service.view()
+  assert.equal(view.botCreate.ok, true)
+  assert.match(view.botCreate.line, /小研/)
+  service.close()
+})
+
+test('createBot omits blank model/preset from creations payload', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let seen = null
+  service.ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return {
+        creations: {
+          create(input) {
+            seen = input
+            return { record: { slug: 'bot-blank', displayName: input.displayName }, channelId: 'ch' }
+          },
+        },
+      }
+    },
+  }
+  const result = service.createBot({ displayName: '空模', model: '  ', preset: '' })
+  assert.equal(result.ok, true)
+  assert.equal(seen.displayName, '空模')
+  assert.equal('model' in seen, false)
+  assert.equal('preset' in seen, false)
+  service.close()
+})
+
+test('create-bot desktop command is drained into createBot', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.createBot = (input) => {
+    called = input
+    return { ok: true, botSlug: 'bot-x', displayName: input.displayName }
+  }
+  writeFileSync(
+    join(dir, 'commands.json'),
+    JSON.stringify([{
+      kind: 'create-bot',
+      displayName: '阿福',
+      persona: '温和',
+      model: 'provider/model-a',
+      preset: 'preset-1',
+    }]),
+  )
+  service.drainDesktopCommands()
+  assert.deepEqual(called, {
+    displayName: '阿福',
+    persona: '温和',
+    description: undefined,
+    model: 'provider/model-a',
+    preset: 'preset-1',
+  })
+  service.close()
+})
+
+test('chat desktop command keeps target bot through drainDesktopCommands', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.chat = (text, options = {}) => {
+    called = { text, options }
+    return { ok: true, target: options.target, botSlug: options.botSlug }
+  }
+  writeFileSync(
+    join(dir, 'commands.json'),
+    JSON.stringify([{ kind: 'chat', text: '你好', target: 'bot', botSlug: 'bot-tob' }]),
+  )
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { text: '你好', options: { target: 'bot', botSlug: 'bot-tob' } })
+  service.close()
+})
+
+test('chat desktop command without target stays session chat', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.chat = (text, options = {}) => {
+    called = { text, options }
+    return { ok: true }
+  }
+  writeFileSync(
+    join(dir, 'commands.json'),
+    JSON.stringify([{ kind: 'chat', text: '会话消息' }]),
+  )
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { text: '会话消息', options: {} })
+  service.close()
+})
+
+test('store persists selectedBotSlug', () => {
+  const dir = tempDir()
+  const store = new Store(dir)
+  store.get().selectedBotSlug = 'bot-alpha'
+  store.close()
+  const reopened = new Store(dir)
+  assert.equal(reopened.get().selectedBotSlug, 'bot-alpha')
+  reopened.close()
+})
+
+test('selectBot persists and appears in view / live.json', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.botSnapshot = {
+    ok: true,
+    bots: [
+      { slug: 'bot-a', name: '甲' },
+      { slug: 'bot-b', name: '乙' },
+    ],
+    schedules: [],
+    dm: { bot: 'bot-a' },
+  }
+  const result = service.selectBot('bot-b')
+  assert.equal(result.ok, true)
+  assert.equal(result.botSlug, 'bot-b')
+  assert.equal(service.view().selectedBotSlug, 'bot-b')
+  service.writeLive()
+  const live = JSON.parse(readFileSync(join(dir, 'live.json'), 'utf8'))
+  assert.equal(live.selectedBotSlug, 'bot-b')
+  assert.equal(live.bots.ok, true)
+  assert.equal(live.bots.bots.length, 2)
+  service.close()
+})
+
+test('chat without botSlug uses persisted selectedBotSlug', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.botSnapshot = {
+    ok: true,
+    bots: [
+      { slug: 'bot-first', name: 'First' },
+      { slug: 'bot-picked', name: 'Picked' },
+    ],
+    schedules: [],
+    dm: { bot: 'bot-first' },
+  }
+  service.selectBot('bot-picked')
+  service.ctx = { get: () => undefined }
+  const result = service.chat('你好', { target: 'bot' })
+  assert.equal(result.ok, true)
+  assert.equal(result.botSlug, 'bot-picked')
+  service.close()
+})
+
+test('chat options.botSlug overrides store selection', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.botSnapshot = {
+    ok: true,
+    bots: [
+      { slug: 'bot-store', name: 'Store' },
+      { slug: 'bot-opt', name: 'Opt' },
+    ],
+    schedules: [],
+    dm: null,
+  }
+  service.selectBot('bot-store')
+  service.ctx = { get: () => undefined }
+  const result = service.chat('覆盖', { target: 'bot', botSlug: 'bot-opt' })
+  assert.equal(result.botSlug, 'bot-opt')
+  service.close()
+})
+
+test('select-bot desktop command is drained into selectBot', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.selectBot = (slug) => {
+    called = slug
+    return { ok: true, botSlug: slug }
+  }
+  writeFileSync(
+    join(dir, 'commands.json'),
+    JSON.stringify([{ kind: 'select-bot', botSlug: 'bot-chosen' }]),
+  )
+  service.drainDesktopCommands()
+  assert.equal(called, 'bot-chosen')
+  service.close()
+})
+
+test('createBot success selects the new bot', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return {
+        creations: {
+          create(input) {
+            return {
+              record: { slug: 'bot-newborn', displayName: input.displayName },
+              channelId: 'ch-new',
+            }
+          },
+        },
+      }
+    },
+  }
+  const result = service.createBot({ displayName: '新生' })
+  assert.equal(result.ok, true)
+  assert.equal(service.store.get().selectedBotSlug, 'bot-newborn')
+  assert.equal(service.view().selectedBotSlug, 'bot-newborn')
+  service.close()
+})
+
+/* ---------- edit / delete / IM bind (in-panel) ---------- */
+
+test('updatePersonaBot builds patch and calls registry.update', () => {
+  let seen = null
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { registry: { update(slug, patch) { seen = { slug, patch }; return { ok: true, record: { slug, displayName: patch.displayName } } } } }
+    },
+  }
+  const result = updatePersonaBot(ctx, { botSlug: 'b1', displayName: '新名', model: 'provider/m', description: '简介', roles: ['r1', ''] })
+  assert.equal(result.ok, true)
+  assert.equal(seen.slug, 'b1')
+  assert.equal(seen.patch.displayName, '新名')
+  assert.equal(seen.patch.model, 'provider/m')
+  assert.equal(seen.patch.description, '简介')
+  assert.deepEqual(seen.patch.roles, ['r1'])
+  // empty patch / blank slug rejected
+  assert.equal(updatePersonaBot(ctx, { botSlug: 'b1' }).ok, false)
+  assert.equal(updatePersonaBot(ctx, { botSlug: '' }).error, 'empty-slug')
+  const noService = updatePersonaBot({ get: () => undefined }, { botSlug: 'b1', displayName: 'x' })
+  assert.equal(noService.error, 'dsb-unavailable')
+})
+
+test('updateBot edits via registry.update and refreshes roster', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let seen = null
+  service.ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { registry: { update(slug, patch) { seen = { slug, patch }; return { ok: true, record: { slug, displayName: patch.displayName } } } } }
+    },
+  }
+  const result = service.updateBot({ botSlug: 'bot-edit', displayName: '新名', model: 'provider/m', description: '简介' })
+  assert.equal(result.ok, true)
+  assert.equal(seen.slug, 'bot-edit')
+  assert.equal(seen.patch.displayName, '新名')
+  assert.equal(service.view().botAction.ok, true)
+  assert.equal(service.view().botAction.kind, 'update')
+  service.close()
+})
+
+test('updateBot degrades when DSB is not mounted', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.ctx = { get: () => undefined }
+  const result = service.updateBot({ botSlug: 'bot-x', displayName: '名' })
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'dsb-unavailable')
+  assert.equal(service.view().botAction.ok, false)
+  assert.match(service.view().botAction.line, /Bot 模式没开/)
+  service.close()
+})
+
+test('update-bot desktop command drains into updateBot', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.updateBot = (input) => { called = input; return { ok: true } }
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'update-bot', botSlug: 'bot-u', displayName: '改', model: 'p/m', description: 'd', roles: ['r1'] }]))
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { botSlug: 'bot-u', displayName: '改', description: 'd', model: 'p/m', preset: undefined, roles: ['r1'] })
+  service.close()
+})
+
+test('deletePersonaBot calls preview then confirm', async () => {
+  let previewSlug = null
+  let confirmArgs = null
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { deletions: { preview(slug) { previewSlug = slug; return { token: 'tok-123', displayName: '要删' } }, confirm(slug, token, erase) { confirmArgs = { slug, token, erase }; return { displayName: '要删', phase: 'deleted', memory: 'cleared' } } } }
+    },
+  }
+  const result = await deletePersonaBot(ctx, { botSlug: 'b-del', eraseMemory: true })
+  assert.equal(result.ok, true)
+  assert.equal(previewSlug, 'b-del')
+  assert.equal(confirmArgs.token, 'tok-123')
+  assert.equal(confirmArgs.erase, true)
+  assert.equal(result.phase, 'deleted')
+  assert.equal((await deletePersonaBot(ctx, { botSlug: '' })).error, 'empty-slug')
+  assert.equal((await deletePersonaBot({ get: () => undefined }, { botSlug: 'x' })).error, 'dsb-unavailable')
+})
+
+test('deleteBot emits pending pulse, confirms, and clears selection', async () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { deletions: { preview: () => ({ token: 't', displayName: 'x' }), confirm: (slug, token, erase) => { called = { slug, token, erase }; return { displayName: 'x', phase: 'deleted' } } } }
+    },
+  }
+  service.store.get().selectedBotSlug = 'bot-del'
+  service.store.touch()
+  const result = service.deleteBot({ botSlug: 'bot-del', eraseMemory: false })
+  assert.equal(result.ok, true)
+  assert.equal(result.pending, true)
+  const pulse = service.view().botAction
+  assert.equal(pulse.kind, 'delete')
+  assert.equal(pulse.pending, true)
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  assert.equal(called.slug, 'bot-del')
+  assert.equal(called.erase, false)
+  assert.equal(service.store.get().selectedBotSlug, null)
+  service.close()
+})
+
+test('delete-bot desktop command drains into deleteBot', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.deleteBot = (input) => { called = input; return { ok: true, pending: true } }
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'delete-bot', botSlug: 'bot-d', eraseMemory: true }]))
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { botSlug: 'bot-d', eraseMemory: true })
+  service.close()
+})
+
+test('bindImChannel validates fingerprint and dispatches to externalMessaging.identity', async () => {
+  let seen = null
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { externalMessaging: { identity: (slug, input) => { seen = { slug, input }; return { id: 'im-1' } } } }
+    },
+  }
+  const ok = await bindImChannel(ctx, { botSlug: 'b', kind: 'bind', providerId: 'dsh-im/telegram', accountRef: 'a', fingerprint: 'a'.repeat(64) })
+  assert.equal(ok.ok, true)
+  assert.equal(seen.slug, 'b')
+  assert.equal(seen.input.kind, 'bind')
+  assert.equal(seen.input.providerId, 'dsh-im/telegram')
+  assert.equal(seen.input.accountRef, 'a')
+  const bad = await bindImChannel(ctx, { botSlug: 'b', kind: 'bind', providerId: 'p', accountRef: 'a', fingerprint: 'xyz' })
+  assert.equal(bad.ok, false)
+  assert.equal(bad.error, 'invalid-fingerprint')
+  const ub = await bindImChannel(ctx, { botSlug: 'b', kind: 'unbind' })
+  assert.equal(ub.ok, false)
+  assert.equal(ub.error, 'invalid-unbind')
+  const none = await bindImChannel({ get: () => undefined }, { botSlug: 'b', kind: 'bind', providerId: 'p', accountRef: 'a', fingerprint: 'a'.repeat(64) })
+  assert.equal(none.error, 'dsb-unavailable')
+})
+
+test('bindIm dispatches via externalMessaging.identity', async () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let seen = null
+  service.ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { externalMessaging: { identity: (slug, input) => { seen = { slug, input }; return { id: 'im-1' } } } }
+    },
+  }
+  const result = service.bindIm({ botSlug: 'bot-b', kind: 'bind', providerId: 'dsh-im/feishu', accountRef: 'a', fingerprint: 'f'.repeat(64) })
+  assert.equal(result.ok, true)
+  assert.equal(result.pending, true)
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  assert.equal(seen.slug, 'bot-b')
+  assert.equal(seen.input.kind, 'bind')
+  assert.equal(service.view().botAction.ok, true)
+  service.close()
+})
+
+test('bind-im desktop command drains into bindIm', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.bindIm = (input) => { called = input; return { ok: true, pending: true } }
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'bind-im', botSlug: 'bot-b', bindKind: 'bind', providerId: 'dsh-im/telegram', accountRef: 'a1', fingerprint: 'f'.repeat(64) }]))
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { botSlug: 'bot-b', kind: 'bind', providerId: 'dsh-im/telegram', accountRef: 'a1', fingerprint: 'f'.repeat(64), id: undefined, expectedRevision: undefined, name: undefined, enabled: undefined, inheritEnabled: undefined })
+  service.close()
+})
+
+test('resolveSelectedBotSlug falls back when stored slug left the roster', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.store.get().selectedBotSlug = 'bot-gone'
+  service.store.touch()
+  service.botSnapshot = {
+    ok: true,
+    bots: [{ slug: 'bot-still', name: 'Still' }],
+    schedules: [],
+    dm: { bot: 'bot-still' },
+  }
+  assert.equal(service.resolveSelectedBotSlug(), 'bot-still')
+  service.close()
+})
+
+/* ---------- 会议 / 日历（面板会议包） ---------- */
+
+test('resolveMeetingsSource returns null without a calendar capability', () => {
+  assert.equal(resolveMeetingsSource({ get: () => undefined }), null)
+  assert.equal(resolveMeetingsSource({ get: () => ({}) }), null)
+  // botharness present but no calendar/meetings namespace
+  assert.equal(resolveMeetingsSource({ get: (n) => (n === 'botharness' ? { creations: {} } : undefined) }), null)
+})
+
+test('readMeetings degrades to ok:false when DSB calendar is absent', async () => {
+  const snap = await readMeetings({ get: () => undefined })
+  assert.equal(snap.ok, false)
+  assert.equal(snap.reason, 'calendar-source-unavailable')
+  assert.deepEqual(snap.meetings, [])
+})
+
+test('readMeetings normalizes a calendar.listEvents payload', async () => {
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return {
+        calendar: {
+          listEvents: async ({ from, to }) => {
+            assert.ok(typeof from === 'string' && typeof to === 'string')
+            return [
+              { id: 'm1', title: '站会', startAt: '2026-10-24T09:30:00Z', provider: 'google', joinUrl: 'https://meet/x' },
+              { id: 'm2', summary: '需求评审', startTime: '2026-10-24T14:00:00Z' },
+              { notAnEvent: true },
+            ]
+          },
+        },
+      }
+    },
+  }
+  const snap = await readMeetings(ctx)
+  assert.equal(snap.ok, true)
+  assert.equal(snap.meetings.length, 2)
+  assert.equal(snap.meetings[0].id, 'm1')
+  assert.equal(snap.meetings[0].title, '站会')
+  assert.equal(snap.meetings[0].joinUrl, 'https://meet/x')
+  assert.equal(snap.meetings[1].title, '需求评审')
+  assert.equal(snap.meetings[1].startAt, '2026-10-24T14:00:00Z')
+  // sorted by startAt
+  assert.ok(snap.meetings[0].startAt < snap.meetings[1].startAt)
+})
+
+test('meetingAction join/open/message dispatch to the calendar capability', async () => {
+  const seen = []
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return {
+        calendar: {
+          listEvents: async () => [],
+          join: async (id) => { seen.push(['join', id]); return { ok: true } },
+          open: async (id) => { seen.push(['open', id]); return { joinUrl: 'https://meet/open' } },
+          sendMessage: async (id, text) => { seen.push(['message', id, text]); return { ok: true } },
+        },
+      }
+    },
+  }
+  const join = await meetingAction(ctx, { action: 'join', meetingId: 'm1' })
+  assert.equal(join.ok, true)
+  const open = await meetingAction(ctx, { action: 'open', meetingId: 'm2' })
+  assert.equal(open.ok, true)
+  assert.equal(open.joinUrl, 'https://meet/open')
+  const msg = await meetingAction(ctx, { action: 'message', meetingId: 'm1', text: '我晚两分钟' })
+  assert.equal(msg.ok, true)
+  assert.deepEqual(seen, [['join', 'm1'], ['open', 'm2'], ['message', 'm1', '我晚两分钟']])
+})
+
+test('meetingAction rejects unknown action / empty id / empty text / missing source', async () => {
+  assert.equal((await meetingAction({ get: () => undefined }, { action: 'join', meetingId: 'm1' })).reason, 'calendar-source-unavailable')
+  assert.equal((await meetingAction({ get: () => ({}) }, { action: 'join', meetingId: '' })).reason, 'empty-meeting-id')
+  assert.equal((await meetingAction({ get: () => ({}) }, { action: 'frobnicate', meetingId: 'm1' })).reason, 'unknown-action')
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { calendar: { listEvents: async () => [], sendMessage: async () => ({ ok: true }) } }
+    },
+  }
+  assert.equal((await meetingAction(ctx, { action: 'message', meetingId: 'm1', text: '  ' })).reason, 'empty-text')
+})
+
+test('service meetingAction reports a friendly pulse when DSB calendar is absent', async () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.ctx = { get: () => undefined }
+  const result = await service.meetingAction({ action: 'join', meetingId: 'm1' })
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'calendar-source-unavailable')
+  const view = service.view()
+  assert.equal(view.meetingPulse.ok, false)
+  assert.match(view.meetingPulse.line, /DSB|日历/)
+  service.close()
+})
+
+test('meeting desktop command drains into meetingAction', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.meetingAction = (input) => { called = input; return { ok: true, pending: true } }
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'meeting', action: 'open', meetingId: 'm9', joinUrl: 'https://x/y' }]))
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { action: 'open', meetingId: 'm9', text: undefined, joinUrl: 'https://x/y' })
+  service.close()
+})
+
+test('pet view always carries a meetings field', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  const view = service.view()
+  assert.ok(view.meetings !== undefined)
+  assert.equal(typeof view.meetings.ok, 'boolean')
+  assert.ok(Array.isArray(view.meetings.meetings))
   service.close()
 })
