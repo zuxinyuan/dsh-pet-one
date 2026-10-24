@@ -462,6 +462,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.showBubble(action == "open" ? "正在打开会议…" : "会议操作已发送…")
                     if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
                 }
+            case "create-art":
+                if let date = payload["date"] as? String, !date.isEmpty,
+                   let title = payload["title"] as? String, !title.isEmpty,
+                   let insight = payload["insight"] as? String, !insight.isEmpty {
+                    var extra: [String: Any] = ["date": date, "title": title, "insight": insight]
+                    if let day = payload["day"] as? Int { extra["day"] = day }
+                    if let day = payload["day"] as? Double { extra["day"] = Int(day) }
+                    if let caption = payload["caption"] as? String, !caption.isEmpty { extra["caption"] = caption }
+                    self.queueCommand("create-art", extra: extra)
+                    self.showBubble("正在保存每日回顾…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "select-art":
+                var extra: [String: Any] = [:]
+                if let artId = payload["artId"] as? String, !artId.isEmpty { extra["artId"] = artId }
+                self.queueCommand("select-art", extra: extra)
+                if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+            case "delete-art":
+                if let artId = payload["artId"] as? String, !artId.isEmpty {
+                    self.queueCommand("delete-art", extra: ["artId": artId])
+                    self.showBubble("正在删除每日回顾…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
             case "dsh":
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/DeepSeek Harness.app"))
             default:
@@ -1037,6 +1060,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "selectedBotSlug": snapshot["selectedBotSlug"] as? String ?? NSNull(),
             "meetings": snapshot["meetings"] as? [String: Any] ?? ["ok": false, "meetings": []],
             "meetingPulse": snapshot["meetingPulse"] as? [String: Any] ?? NSNull(),
+            "art": snapshot["art"] as? [String: Any] ?? ["ok": true, "pages": []],
+            "artPulse": snapshot["artPulse"] as? [String: Any] ?? NSNull(),
+            "selectedArtId": snapshot["selectedArtId"] as? String ?? NSNull(),
         ]
     }
 
