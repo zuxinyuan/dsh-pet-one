@@ -452,6 +452,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.launchLive2D()
             case "close":
                 self.infoPanel.orderOut(nil)
+            case "meeting":
+                if let action = payload["action"] as? String, !action.isEmpty,
+                   let meetingId = payload["meetingId"] as? String, !meetingId.isEmpty {
+                    var extra: [String: Any] = ["action": action, "meetingId": meetingId]
+                    if let joinUrl = payload["joinUrl"] as? String, !joinUrl.isEmpty { extra["joinUrl"] = joinUrl }
+                    if let text = payload["text"] as? String, !text.isEmpty { extra["text"] = text }
+                    self.queueCommand("meeting", extra: extra)
+                    self.showBubble(action == "open" ? "正在打开会议…" : "会议操作已发送…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
             case "dsh":
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/DeepSeek Harness.app"))
             default:
@@ -1025,6 +1035,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "botCreate": snapshot["botCreate"] as? [String: Any] ?? NSNull(),
             "botBridge": snapshot["botBridge"] as? [String: Any] ?? ["ok": false],
             "selectedBotSlug": snapshot["selectedBotSlug"] as? String ?? NSNull(),
+            "meetings": snapshot["meetings"] as? [String: Any] ?? ["ok": false, "meetings": []],
+            "meetingPulse": snapshot["meetingPulse"] as? [String: Any] ?? NSNull(),
         ]
     }
 

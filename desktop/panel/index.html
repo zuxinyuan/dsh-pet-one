@@ -477,6 +477,7 @@ footer::after{
     <button data-tab="tools">工具</button>
     <button data-tab="packs">角色</button>
     <button data-tab="bots">Bot</button>
+    <button data-tab="meetings">会议</button>
   </nav>
 
   <main id="main">
@@ -656,6 +657,15 @@ footer::after{
     </section>
   </main>
 
+    <!-- 会议：今日 / 即将开始的会议（DSB 日历源） -->
+    <section class="panel" data-panel="meetings">
+      <div class="card gold">
+        <div class="card-title">今日 / 即将开始 <span class="hint" id="meetingHint"></span></div>
+        <div id="meetingList"></div>
+      </div>
+      <div class="memory" style="padding:2px 4px">会议来自 DSB 日历：点选可加入 / 打开链接 / 会中发消息。DSB 未连日历时显示空态，宠物照常工作。</div>
+    </section>
+
   <footer>
     <div class="pending" id="pending" hidden>讯息已发出，等待星轨回响…</div>
     <button class="btn target" id="targetBtn" title="切换发送目标">会话</button>
@@ -690,7 +700,9 @@ let state = {
   packId: 'whale-girl',
   chat: { pending: false },
   pomodoro: null,
-  voice: true
+  voice: true,
+  meetings: { ok: false, reason: 'pending', meetings: [] },
+  meetingPulse: null
 };
 
 function escapeHtml(value) {
@@ -986,8 +998,83 @@ function render(s) {
     $('#pomoBtn').textContent = '开始';
   }
 
+  // meetings (DSB calendar source)
+  renderMeetings(s);
+
   // chat
   $('#pending').hidden = !(s.chat && s.chat.pending);
+}
+
+/* ---------- meetings (DSB calendar) ---------- */
+function renderMeetings(s) {
+  const wrap = $('#meetingList');
+  if (!wrap) return;
+  const data = s.meetings || { ok: false, reason: 'pending', meetings: [] };
+  const meetings = Array.isArray(data.meetings) ? data.meetings : [];
+  wrap.innerHTML = '';
+  const hint = $('#meetingHint');
+
+  if (!data.ok) {
+    const tip = data.reason === 'calendar-source-unavailable'
+      ? 'DSB 还没开日历。去 DeepSeek Harness 连上你的日历（Google / 飞书 / Outlook…），回到这里就能看到今日会议。'
+      : '日历暂时读不到，稍后再来看看～';
+    wrap.innerHTML = `<div class="empty">${tip}</div>`;
+    if (hint) hint.textContent = '未连接';
+    return;
+  }
+  if (!meetings.length) {
+    wrap.innerHTML = '<div class="empty">今天没有会议，享受清静吧 ☕</div>';
+    if (hint) hint.textContent = '0 场';
+    return;
+  }
+  if (hint) hint.textContent = meetings.length + ' 场';
+
+  for (const m of meetings) {
+    const row = document.createElement('div');
+    row.className = 'tool';
+    const when = m.startAt
+      ? new Date(m.startAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '';
+    const prov = m.provider ? `<span class="hint" style="margin-left:auto">${escapeHtml(m.provider)}</span>` : '';
+    row.innerHTML = `
+      <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16"/><path d="M3 9h18M8 3v4M16 3v4"/></svg></div>
+      <div class="body"><b>${escapeHtml(m.title || '未命名会议')}</b><span>${escapeHtml(when)}${m.status ? ' · ' + escapeHtml(m.status) : ''}</span></div>`;
+    const actions = document.createElement('div');
+    actions.className = 'bot-actions';
+
+    const joinBtn = document.createElement('button');
+    joinBtn.className = 'btn mini';
+    joinBtn.textContent = '加入';
+    joinBtn.onclick = () => post('meeting', { action: 'join', meetingId: m.id, joinUrl: m.joinUrl });
+
+    const openBtn = document.createElement('button');
+    openBtn.className = 'btn mini';
+    openBtn.textContent = '链接';
+    openBtn.onclick = () => post('meeting', { action: 'open', meetingId: m.id, joinUrl: m.joinUrl });
+
+    const msgBtn = document.createElement('button');
+    msgBtn.className = 'btn mini';
+    msgBtn.textContent = '发消息';
+    msgBtn.onclick = () => {
+      const text = window.prompt('会中发一句话给会议（经 DSB）：') || '';
+      const trimmed = text.trim();
+      if (trimmed) post('meeting', { action: 'message', meetingId: m.id, text: trimmed, joinUrl: m.joinUrl });
+    };
+
+    actions.append(joinBtn, openBtn, msgBtn);
+    row.append(actions);
+    wrap.appendChild(row);
+  }
+
+  // 最近一次会议操作脉冲
+  const pulse = s.meetingPulse;
+  if (pulse && pulse.line) {
+    const note = document.createElement('div');
+    note.className = 'memory';
+    note.textContent = pulse.line;
+    note.style.color = pulse.ok === false ? '#ffb4b4' : 'var(--gold)';
+    wrap.prepend(note);
+  }
 }
 
 window.__render = render;

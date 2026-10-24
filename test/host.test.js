@@ -16,7 +16,7 @@ import { ActivityTracker, projectEvent, emptyRuntime } from '../lib/host/activit
 import { interact, rewardTurn, rankOf } from '../lib/host/economy.js'
 import { createSkinRegistry } from '../lib/host/skins.js'
 import { PetOneService } from '../lib/host/service.js'
-import { updatePersonaBot, deletePersonaBot, bindImChannel } from '../lib/host/dsb.js'
+import { updatePersonaBot, deletePersonaBot, bindImChannel, resolveMeetingsSource, readMeetings, meetingAction } from '../lib/host/dsb.js'
 import { makeRoutes } from '../lib/host/routes.js'
 
 /** Fresh temp dir per test. */
@@ -838,5 +838,123 @@ test('resolveSelectedBotSlug falls back when stored slug left the roster', () =>
     dm: { bot: 'bot-still' },
   }
   assert.equal(service.resolveSelectedBotSlug(), 'bot-still')
+  service.close()
+})
+
+/* ---------- 会议 / 日历（面板会议包） ---------- */
+
+test('resolveMeetingsSource returns null without a calendar capability', () => {
+  assert.equal(resolveMeetingsSource({ get: () => undefined }), null)
+  assert.equal(resolveMeetingsSource({ get: () => ({}) }), null)
+  // botharness present but no calendar/meetings namespace
+  assert.equal(resolveMeetingsSource({ get: (n) => (n === 'botharness' ? { creations: {} } : undefined) }), null)
+})
+
+test('readMeetings degrades to ok:false when DSB calendar is absent', async () => {
+  const snap = await readMeetings({ get: () => undefined })
+  assert.equal(snap.ok, false)
+  assert.equal(snap.reason, 'calendar-source-unavailable')
+  assert.deepEqual(snap.meetings, [])
+})
+
+test('readMeetings normalizes a calendar.listEvents payload', async () => {
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return {
+        calendar: {
+          listEvents: async ({ from, to }) => {
+            assert.ok(typeof from === 'string' && typeof to === 'string')
+            return [
+              { id: 'm1', title: '站会', startAt: '2026-10-24T09:30:00Z', provider: 'google', joinUrl: 'https://meet/x' },
+              { id: 'm2', summary: '需求评审', startTime: '2026-10-24T14:00:00Z' },
+              { notAnEvent: true },
+            ]
+          },
+        },
+      }
+    },
+  }
+  const snap = await readMeetings(ctx)
+  assert.equal(snap.ok, true)
+  assert.equal(snap.meetings.length, 2)
+  assert.equal(snap.meetings[0].id, 'm1')
+  assert.equal(snap.meetings[0].title, '站会')
+  assert.equal(snap.meetings[0].joinUrl, 'https://meet/x')
+  assert.equal(snap.meetings[1].title, '需求评审')
+  assert.equal(snap.meetings[1].startAt, '2026-10-24T14:00:00Z')
+  // sorted by startAt
+  assert.ok(snap.meetings[0].startAt < snap.meetings[1].startAt)
+})
+
+test('meetingAction join/open/message dispatch to the calendar capability', async () => {
+  const seen = []
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return {
+        calendar: {
+          listEvents: async () => [],
+          join: async (id) => { seen.push(['join', id]); return { ok: true } },
+          open: async (id) => { seen.push(['open', id]); return { joinUrl: 'https://meet/open' } },
+          sendMessage: async (id, text) => { seen.push(['message', id, text]); return { ok: true } },
+        },
+      }
+    },
+  }
+  const join = await meetingAction(ctx, { action: 'join', meetingId: 'm1' })
+  assert.equal(join.ok, true)
+  const open = await meetingAction(ctx, { action: 'open', meetingId: 'm2' })
+  assert.equal(open.ok, true)
+  assert.equal(open.joinUrl, 'https://meet/open')
+  const msg = await meetingAction(ctx, { action: 'message', meetingId: 'm1', text: '我晚两分钟' })
+  assert.equal(msg.ok, true)
+  assert.deepEqual(seen, [['join', 'm1'], ['open', 'm2'], ['message', 'm1', '我晚两分钟']])
+})
+
+test('meetingAction rejects unknown action / empty id / empty text / missing source', async () => {
+  assert.equal((await meetingAction({ get: () => undefined }, { action: 'join', meetingId: 'm1' })).reason, 'calendar-source-unavailable')
+  assert.equal((await meetingAction({ get: () => ({}) }, { action: 'join', meetingId: '' })).reason, 'empty-meeting-id')
+  assert.equal((await meetingAction({ get: () => ({}) }, { action: 'frobnicate', meetingId: 'm1' })).reason, 'unknown-action')
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { calendar: { listEvents: async () => [], sendMessage: async () => ({ ok: true }) } }
+    },
+  }
+  assert.equal((await meetingAction(ctx, { action: 'message', meetingId: 'm1', text: '  ' })).reason, 'empty-text')
+})
+
+test('service meetingAction reports a friendly pulse when DSB calendar is absent', async () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.ctx = { get: () => undefined }
+  const result = await service.meetingAction({ action: 'join', meetingId: 'm1' })
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'calendar-source-unavailable')
+  const view = service.view()
+  assert.equal(view.meetingPulse.ok, false)
+  assert.match(view.meetingPulse.line, /DSB|日历/)
+  service.close()
+})
+
+test('meeting desktop command drains into meetingAction', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.meetingAction = (input) => { called = input; return { ok: true, pending: true } }
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'meeting', action: 'open', meetingId: 'm9', joinUrl: 'https://x/y' }]))
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { action: 'open', meetingId: 'm9', text: undefined, joinUrl: 'https://x/y' })
+  service.close()
+})
+
+test('pet view always carries a meetings field', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  const view = service.view()
+  assert.ok(view.meetings !== undefined)
+  assert.equal(typeof view.meetings.ok, 'boolean')
+  assert.ok(Array.isArray(view.meetings.meetings))
   service.close()
 })
