@@ -15,6 +15,21 @@
       "https://github.com/renderg-repo/galaxy-ops/issues/5",
       "gh issue view 5 -R renderg-repo/galaxy-ops"
     ],
-    "stuck_reply": "卡在登录/权限就说「打不开」；卡在找不到「12」就说「没找到」"
+    "stuck_reply": "卡在登录/权限就说「打不开」；卡在找不到「12」就说「没找到」",
+    "walkthrough": {
+      "html": "samples/galaxy-ops-12-walkthrough.html",
+      "caption": "照着点：从 issue 列表到复制含「12」那一行"
+    },
+    "media": [
+      {
+        "type": "image",
+        "src": "media/galaxy-ops-12-placeholder.svg",
+        "caption": "issue #5 正文占位截图：红框圈出含「12」的那一行",
+        "hotspots": [
+          { "x": 4, "y": 33, "w": 60, "h": 8, "label": "含「12」的那一行" },
+          { "x": 70, "y": 13, "w": 16, "h": 7, "label": "确认是 issue #5" }
+        ]
+      }
+    ]
   }
 }

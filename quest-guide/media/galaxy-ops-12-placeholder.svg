@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" font-family="-apple-system,Segoe UI,sans-serif">
+  <rect width="800" height="420" fill="#ffffff"/>
+  <rect width="800" height="34" fill="#eaeef2"/>
+  <circle cx="16" cy="17" r="5" fill="#c9d1d9"/><circle cx="34" cy="17" r="5" fill="#c9d1d9"/><circle cx="52" cy="17" r="5" fill="#c9d1d9"/>
+  <text x="16" y="74" font-size="18" font-weight="700" fill="#1f2328">Galaxy Ops 排期表 #5</text>
+  <text x="16" y="120" font-size="15" fill="#24292f">1. 启动核心 reactor</text>
+  <text x="16" y="150" font-size="15" fill="#24292f">2. 校准引力透镜（周期 12 小时）</text>
+  <text x="16" y="180" font-size="15" fill="#24292f">3. 同步星图节点 04 / 09</text>
+  <text x="16" y="210" font-size="15" fill="#24292f">4. 巡检外壳热防护层</text>
+  <text x="16" y="240" font-size="15" fill="#24292f">5. 归档昨日遥测日志</text>
+  <text x="16" y="300" font-size="12" fill="#57606a">占位截图：替换为 Walkthrough-Creator 导出的真截图即可。</text>
+</svg>

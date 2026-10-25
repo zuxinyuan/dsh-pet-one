@@ -55,6 +55,66 @@
           "type": "string",
           "description": "卡住时的回句：分情况给一句人话",
           "maxLength": 500
+        },
+        "walkthrough": {
+          "type": "object",
+          "description": "可选：指向一份「单文件 HTML 图文讲解」（如 Walkthrough-Creator 导出）。面板会像艺术页一样内嵌打开。",
+          "additionalProperties": false,
+          "properties": {
+            "html": {
+              "type": "string",
+              "description": "相对 quest-guide 目录的单文件 HTML 路径，如 samples/galaxy-ops-12-walkthrough.html",
+              "maxLength": 256
+            },
+            "caption": {
+              "type": "string",
+              "description": "讲解的副标题 / 说明（可选）",
+              "maxLength": 300
+            }
+          }
+        },
+        "media": {
+          "type": "array",
+          "description": "可选：步骤旁的截图/内嵌 HTML。无 media 时旧纯文字卡仍可用（fail-soft）。",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["image", "html"],
+                "description": "image=截图（相对路径或 file URL）；html=内嵌单文件 HTML 资产路径"
+              },
+              "src": {
+                "type": "string",
+                "description": "图片或 HTML 的相对路径（相对 quest-guide 目录）或 file:/// 绝对路径",
+                "maxLength": 2048
+              },
+              "caption": {
+                "type": "string",
+                "description": "截图说明（可选）",
+                "maxLength": 300
+              },
+              "hotspots": {
+                "type": "array",
+                "description": "可选：在截图上叠加的红框/序号热区，坐标按图片百分比 0–100",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": { "type": "number", "minimum": 0, "maximum": 100 },
+                    "y": { "type": "number", "minimum": 0, "maximum": 100 },
+                    "w": { "type": "number", "minimum": 0, "maximum": 100 },
+                    "h": { "type": "number", "minimum": 0, "maximum": 100 },
+                    "label": { "type": "string", "maxLength": 120 }
+                  },
+                  "required": ["x", "y", "w", "h"]
+                },
+                "maxItems": 30
+              }
+            }
+          },
+          "maxItems": 20
         }
       }
     }

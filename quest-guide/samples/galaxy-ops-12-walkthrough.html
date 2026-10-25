@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>图文讲解 · galaxy-ops #5 含「12」的一行</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #f6f8fa; color: #1f2328;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 14px; line-height: 1.6;
+  }
+  header { padding: 14px 18px; background: #24292f; color: #fff; }
+  header b { font-size: 15px; }
+  header span { color: #9da7b3; font-size: 12px; }
+  .wrap { display: flex; gap: 16px; padding: 18px; align-items: flex-start; flex-wrap: wrap; }
+  /* 假截图：纯 CSS 画的 issue 页面 */
+  .shot {
+    position: relative; flex: 1 1 420px; min-width: 320px;
+    border: 1px solid #d0d7de; border-radius: 10px; overflow: hidden; background: #fff;
+  }
+  .shot .bar { height: 34px; background: #eaeef2; border-bottom: 1px solid #d0d7de; display: flex; align-items: center; padding: 0 12px; gap: 6px; }
+  .shot .bar i { width: 10px; height: 10px; border-radius: 50%; background: #c9d1d9; display: inline-block; }
+  .shot .title { padding: 14px 16px; font-weight: 600; font-size: 16px; border-bottom: 1px solid #eaeef2; }
+  .shot .title small { color: #57606a; font-weight: 400; }
+  .shot pre {
+    margin: 0; padding: 16px; white-space: pre-wrap; word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: #24292f;
+  }
+  /* 热区：红框 + 序号，与面板 media hotspots 同款视觉 */
+  .hot {
+    position: absolute; border: 2px solid #ff4d4f; border-radius: 6px;
+    box-shadow: 0 0 0 2px rgba(255,77,79,.3); cursor: pointer; transition: .15s;
+  }
+  .hot:hover { background: rgba(255,77,79,.12); }
+  .hot i {
+    position: absolute; top: -10px; left: -10px; width: 20px; height: 20px; line-height: 20px;
+    text-align: center; font-style: normal; font-size: 12px; color: #fff; background: #ff4d4f; border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,.4);
+  }
+  /* 步骤侧栏 */
+  .steps { flex: 0 1 260px; min-width: 220px; }
+  .steps h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #57606a; margin: 0 0 10px; }
+  .steps ol { margin: 0; padding-left: 0; list-style: none; counter-reset: s; }
+  .steps li {
+    counter-increment: s; display: flex; gap: 10px; margin-bottom: 12px;
+    background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 10px 12px;
+  }
+  .steps li::before {
+    content: counter(s); flex: 0 0 22px; width: 22px; height: 22px; line-height: 22px; text-align: center;
+    background: #ff4d4f; color: #fff; border-radius: 50%; font-weight: 600; font-size: 12px;
+  }
+  .steps li p { margin: 0; }
+  .note { margin-top: 6px; font-size: 12px; color: #57606a; }
+</style>
+</head>
+<body>
+  <header>
+    <b>galaxy-ops · issue #5</b> &nbsp; <span>图文讲解：定位含「12」的那一行</span>
+  </header>
+
+  <div class="wrap">
+    <!-- 假截图：用 CSS 画的 issue 正文 -->
+    <div class="shot">
+      <div class="bar"><i></i><i></i><i></i></div>
+      <div class="title">Galaxy Ops 排期表 <small>#5</small></div>
+      <pre>1. 启动核心 reactor
+2. 校准引力透镜（周期 12 小时）
+3. 同步星图节点 04 / 09
+4. 巡检外壳热防护层
+5. 归档昨日遥测日志</pre>
+
+      <!-- 热区 1：圈住第 2 行「周期 12 小时」 -->
+      <span class="hot" style="left:6%; top:46%; width:62%; height:9%" title="含「12」的那一行">
+        <i>1</i>
+      </span>
+      <!-- 热区 2：圈住标题里的 #5 -->
+      <span class="hot" style="left:72%; top:24%; width:14%; height:8%" title="确认是 issue #5">
+        <i>2</i>
+      </span>
+      <!-- 热区 3：圈住第 5 行遥测日志 -->
+      <span class="hot" style="left:6%; top:74%; width:50%; height:9%" title="可选：顺手看一眼日志">
+        <i>3</i>
+      </span>
+    </div>
+
+    <div class="steps">
+      <h2>照着点（3 步）</h2>
+      <ol>
+        <li><p>打开 galaxy-ops issue #5（浏览器或 <code>gh issue view 5</code>）。</p></li>
+        <li><p>在正文里搜「12」，定位到「校准引力透镜（周期 12 小时）」这一行。</p></li>
+        <li><p>把它<b>整行原样</b>复制，贴回给 soulmate；没打开过就只回「没看过」。</p></li>
+      </ol>
+      <p class="note">↑ 红框为示意热区（true 截图时由 Walkthrough-Creator 导出）。本样例为占位讲解，可自行替换真截图。</p>
+    </div>
+  </div>
+</body>
+</html>

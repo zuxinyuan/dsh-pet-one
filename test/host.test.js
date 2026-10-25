@@ -918,6 +918,99 @@ test('quest-guide service exposes the guide in view(), live.json and the HTTP ro
   await new Promise((resolve) => server.close(resolve))
 })
 
+test('quest-guide normalizes walkthrough + media (backward compatible)', () => {
+  const card = normalizeCard({
+    id: 'w1',
+    title: 't',
+    goal: 'g',
+    guide: {
+      steps: ['a'],
+      walkthrough: { html: 'samples/x.html', caption: 'c' },
+      media: [
+        { type: 'image', src: 'media/pic.svg', caption: 'cap', hotspots: [{ x: 1, y: 2, w: 3, h: 4, label: 'L' }, { bad: true }] },
+        { type: 'html', src: 'samples/y.html' },
+        { type: 'image', src: '' }, // 无 src => 丢弃
+      ],
+    },
+  })
+  assert.equal(validateCard(card).length, 0)
+  assert.deepEqual(card.guide.walkthrough, { html: 'samples/x.html', caption: 'c' })
+  // 只保留合法 media（src 非空 + hotspot 合法）
+  assert.equal(card.guide.media.length, 2)
+  assert.equal(card.guide.media[0].type, 'image')
+  assert.equal(card.guide.media[0].hotspots.length, 1)
+  assert.equal(card.guide.media[0].hotspots[0].label, 'L')
+  assert.equal(card.guide.media[1].type, 'html')
+
+  // walkthrough 必须是 .html/.htm，否则丢弃
+  assert.equal(normalizeCard({ id: 'w2', title: 't', goal: 'g', guide: { steps: ['a'], walkthrough: { html: 'evil.txt' } } }).guide.walkthrough, null)
+  // 旧纯文字卡无 media/walkthrough 时仍可用（fail-soft）
+  const plain = normalizeCard({ id: 'w3', title: 't', goal: 'g', guide: { steps: ['a'] } })
+  assert.equal(plain.guide.walkthrough, null)
+  assert.deepEqual(plain.guide.media, [])
+})
+
+test('quest-guide asset serving guards traversal and mime', () => {
+  const dir = tempDir()
+  writeFileSync(join(dir, 'card.json'), JSON.stringify({ id: 'a', title: 't', goal: 'g', guide: { steps: ['s'] } }), 'utf8')
+  writeFileSync(join(dir, 'walk.html'), '<!doctype html><p>walk</p>', 'utf8')
+  writeFileSync(join(dir, 'pic.svg'), '<svg/>', 'utf8')
+  // 目录外放一个敏感文件，资产路由绝不能读到
+  const outside = join(dir, '..', 'secret.txt')
+  writeFileSync(outside, 'TOPSECRET', 'utf8')
+
+  const service = new PetOneService({ env: {}, dir, questGuideDir: dir })
+
+  // 合法 html
+  const okHtml = service.questGuideAsset('walk.html')
+  assert.ok(okHtml && okHtml.mime.startsWith('text/html'))
+  // 合法 svg
+  const okSvg = service.questGuideAsset('pic.svg')
+  assert.equal(okSvg && okSvg.mime, 'image/svg+xml')
+  // 路径穿越被拒
+  assert.equal(service.questGuideAsset('../secret.txt'), null)
+  assert.equal(service.questGuideAsset('..%2fsecret.txt'), null)
+  assert.equal(service.questGuideAsset('/etc/passwd'), null)
+  // 非白名单扩展名被拒
+  assert.equal(service.questGuideAsset('note.txt'), null)
+  // 不存在被拒
+  assert.equal(service.questGuideAsset('nope.html'), null)
+  service.close()
+})
+
+test('quest-guide asset route serves through HTTP and blocks traversal', async () => {
+  const dir = tempDir()
+  writeFileSync(join(dir, 'card.json'), JSON.stringify({ id: 'a', title: 't', goal: 'g', guide: { steps: ['s'] } }), 'utf8')
+  writeFileSync(join(dir, 'walk.html'), '<!doctype html><p>walk</p>', 'utf8')
+  const outside = join(dir, '..', 'secret2.txt')
+  writeFileSync(outside, 'TOPSECRET2', 'utf8')
+
+  const service = new PetOneService({ env: {}, dir, questGuideDir: dir })
+  const routes = makeRoutes(service)
+  const server = http.createServer((req, res) => {
+    const path = (req.url ?? '').split('?')[0]
+    const exact = routes.find((route) => route.kind === 'exact' && route.path === path)
+    if (exact) return exact.handler(req, res)
+    const prefix = routes.find((route) => route.kind === 'prefix' && path.startsWith(route.path))
+    if (prefix) return prefix.handler(req, res)
+    res.writeHead(404).end()
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const base = `http://127.0.0.1:${server.address().port}`
+
+  const ok = await fetch(`${base}/api/pet-one/quest-guide/asset?path=${encodeURIComponent('walk.html')}`)
+  assert.equal(ok.status, 200)
+  assert.ok((ok.headers.get('content-type') || '').startsWith('text/html'))
+  assert.equal(await ok.text(), '<!doctype html><p>walk</p>')
+
+  // 穿越被 404
+  const bad = await fetch(`${base}/api/pet-one/quest-guide/asset?path=${encodeURIComponent('../secret2.txt')}`)
+  assert.equal(bad.status, 404)
+
+  service.close()
+  await new Promise((resolve) => server.close(resolve))
+})
+
 /* ---------- 会议 / 日历（面板会议包） ---------- */
 
 test('resolveMeetingsSource returns null without a calendar capability', () => {
