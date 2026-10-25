@@ -18,6 +18,7 @@ import { createSkinRegistry } from '../lib/host/skins.js'
 import { PetOneService } from '../lib/host/service.js'
 import { updatePersonaBot, deletePersonaBot, bindImChannel } from '../lib/host/dsb.js'
 import { makeRoutes } from '../lib/host/routes.js'
+import { loadQuestGuide, normalizeCard, validateCard, DEFAULT_CARD } from '../lib/host/quest-guide.js'
 
 /** Fresh temp dir per test. */
 function tempDir() {
@@ -840,3 +841,80 @@ test('resolveSelectedBotSlug falls back when stored slug left the roster', () =>
   assert.equal(service.resolveSelectedBotSlug(), 'bot-still')
   service.close()
 })
+
+/* ---------- quest-guide (今日任务指引) ---------- */
+
+test('quest-guide normalizes and validates a card', () => {
+  const card = normalizeCard({
+    id: 'x'.repeat(200),
+    title: 't',
+    goal: 'g',
+    guide: { steps: ['a', 'b'], paths: ['https://e/x', 'gh issue view 1'] },
+  })
+  assert.equal(card.id.length, 120)
+  assert.deepEqual(card.guide.steps, ['a', 'b'])
+  assert.equal(validateCard(card).length, 0)
+  // missing required fields => errors
+  assert.ok(validateCard(normalizeCard({})).length > 0)
+  // builtin default always validates
+  assert.equal(validateCard(normalizeCard(DEFAULT_CARD)).length, 0)
+})
+
+test('quest-guide loader falls back to the builtin sample when the dir is empty', () => {
+  const empty = tempDir()
+  const result = loadQuestGuide({ dir: empty, date: dayKey() })
+  assert.equal(result.ok, true)
+  assert.equal(result.source, 'builtin:default')
+  assert.equal(typeof result.card.id, 'string')
+  assert.ok(result.card.guide.steps.length > 0)
+})
+
+test('quest-guide loader reads a fed card.json', () => {
+  const base = tempDir()
+  writeFileSync(join(base, 'card.json'), JSON.stringify({
+    id: 'fed-card-1',
+    title: '喂的卡',
+    goal: '做点事',
+    guide: { steps: ['第一步', '第二步'], paths: ['https://example.com'], stuck_reply: '卡住回一句' },
+  }), 'utf8')
+  const result = loadQuestGuide({ dir: base, date: dayKey() })
+  assert.equal(result.ok, true)
+  assert.ok(result.source.endsWith('card.json'))
+  assert.equal(result.card.id, 'fed-card-1')
+  assert.equal(result.card.title, '喂的卡')
+  assert.deepEqual(result.card.guide.steps, ['第一步', '第二步'])
+})
+
+test('quest-guide service exposes the guide in view(), live.json and the HTTP route', async () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  const guide = service.questGuide()
+  assert.equal(guide.ok, true)
+  assert.equal(typeof guide.card.id, 'string')
+
+  const view = service.view()
+  assert.equal(view.questGuide.ok, true)
+  assert.equal(view.questGuide.card.id, guide.card.id)
+
+  service.writeLive()
+  const live = JSON.parse(readFileSync(join(dir, 'live.json'), 'utf8'))
+  assert.equal(live.questGuide.card.id, guide.card.id)
+
+  // HTTP round trip through the route table
+  const routes = makeRoutes(service)
+  const server = http.createServer((req, res) => {
+    const path = (req.url ?? '').split('?')[0]
+    const exact = routes.find((route) => route.kind === 'exact' && route.path === path)
+    if (exact) return exact.handler(req, res)
+    res.writeHead(404).end()
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const base = `http://127.0.0.1:${server.address().port}`
+  const fetched = await (await fetch(`${base}/api/pet-one/quest-guide`)).json()
+  assert.equal(fetched.ok, true)
+  assert.equal(typeof fetched.card.id, 'string')
+  assert.ok(Array.isArray(fetched.card.guide.steps))
+  service.close()
+  await new Promise((resolve) => server.close(resolve))
+})
+

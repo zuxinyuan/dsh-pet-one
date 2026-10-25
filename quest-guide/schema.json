@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh-pet.one/schemas/quest-guide.json",
+  "title": "QuestGuide",
+  "description": "今日任务指引（星穹铁道式）。soulmate 只填这张卡，DeepSeek BOT / 桌宠负责展示。",
+  "type": "object",
+  "required": ["id", "title", "goal", "guide"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "任务卡唯一 id，建议 <日期>-<slug>，如 2026-10-25-galaxy-ops-12",
+      "maxLength": 120
+    },
+    "title": {
+      "type": "string",
+      "description": "一句话任务标题（面板大标题）",
+      "maxLength": 200
+    },
+    "goal": {
+      "type": "string",
+      "description": "目标：用户完成后应当交付什么",
+      "maxLength": 500
+    },
+    "accept": {
+      "type": "string",
+      "description": "验收：怎样算完成 / 怎样算明确放弃",
+      "maxLength": 500
+    },
+    "forbid": {
+      "type": "string",
+      "description": "禁忌：不要让 BOT 替用户做哪些事",
+      "maxLength": 500
+    },
+    "guide": {
+      "type": "object",
+      "description": "指引本体：点哪、走哪条路径、卡住回哪句",
+      "required": ["steps"],
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "type": "array",
+          "description": "有序步骤，每一步一句话",
+          "items": { "type": "string", "maxLength": 300 },
+          "minItems": 1,
+          "maxItems": 20
+        },
+        "paths": {
+          "type": "array",
+          "description": "可点击路径：http(s) 链接或命令行",
+          "items": { "type": "string", "maxLength": 500 },
+          "maxItems": 20
+        },
+        "stuck_reply": {
+          "type": "string",
+          "description": "卡住时的回句：分情况给一句人话",
+          "maxLength": 500
+        }
+      }
+    }
+  }
+}

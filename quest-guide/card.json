@@ -1,0 +1,20 @@
+{
+  "id": "2026-10-25-galaxy-ops-12",
+  "title": "抄 galaxy-ops #5 含「12」的一行",
+  "goal": "打开 issue，把含「12」的那一行原样贴回；没看过就回「没看过」",
+  "accept": "用户贴出含「12」的原文一行，或明确「没看过」",
+  "forbid": "不要替用户总结 issue；不要编造 12 维内容",
+  "guide": {
+    "steps": [
+      "打开浏览器或 gh：renderg-repo/galaxy-ops issue #5",
+      "在正文里搜「12」",
+      "把含「12」的那一整行原样复制",
+      "粘贴给 soulmate；若没打开过就只回：没看过"
+    ],
+    "paths": [
+      "https://github.com/renderg-repo/galaxy-ops/issues/5",
+      "gh issue view 5 -R renderg-repo/galaxy-ops"
+    ],
+    "stuck_reply": "卡在登录/权限就说「打不开」；卡在找不到「12」就说「没找到」"
+  }
+}
