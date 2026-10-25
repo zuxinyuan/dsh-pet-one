@@ -338,6 +338,16 @@ header::after{background-size:200% 100%;animation:sheen 7s linear infinite}
 
 /* create bot */
 .create-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.create-row-btns{display:inline-flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.create-form .field{display:flex;flex-direction:column;gap:3px}
+.create-form .field label{font-size:10px;color:#c9cede;letter-spacing:.03em}
+.feed-summary{display:block;color:#c9cede;font-size:10px;line-height:1.4;margin-top:1px}
+.badge{display:inline-block;min-width:34px;text-align:center;font-size:9px;font-weight:600;letter-spacing:.04em;padding:1px 5px;border-radius:9px;margin-right:2px;color:#0d0a14;background:#cdbeef}
+.badge-x{background:#9fe0ff}
+.badge-youtube{background:#ff9b9b}
+.badge-manual,.badge-panel{background:#e8c98a}
+.memory.warn{color:#ffcaca}
+.memory.warn::before{content:"!";color:#ff9b9b}
 .create-form{display:flex;flex-direction:column;gap:6px;margin:6px 0 10px;padding:8px;border:1px dashed rgba(232,201,138,.35);border-radius:6px;background:rgba(20,16,28,.35)}
 .create-form input,.create-form textarea{
   width:100%;box-sizing:border-box;background:rgba(0,0,0,.25);border:1px solid rgba(206,184,254,.25);
@@ -699,7 +709,21 @@ footer::after{
       <div class="card gold">
         <div class="create-row">
           <div class="card-title" style="margin:0">动态 <span class="hint" id="feedHint"></span></div>
-          <button class="btn mini" id="createFeedBtn" type="button" title="写一条动态">写动态</button>
+          <span class="create-row-btns">
+            <button class="btn mini" id="refreshFeedBtn" type="button" title="拉取 X / YouTube 动态">刷新</button>
+            <button class="btn mini" id="feedSettingsBtn" type="button" title="配置 X / YouTube 来源">设置</button>
+            <button class="btn mini" id="createFeedBtn" type="button" title="写一条动态">写动态</button>
+          </span>
+        </div>
+        <div class="create-form" id="feedSettingsForm" hidden>
+          <div class="field"><label>X 账号</label><input id="xHandle" maxlength="64" placeholder="handle，如 elonmusk（不含 @）"></div>
+          <div class="field"><label>X 关键词</label><input id="xKeywords" maxlength="200" placeholder="可选，与账号二选一"></div>
+          <div class="field"><label>YouTube 频道</label><input id="ytChannel" maxlength="300" placeholder="频道 URL 或 channel_id（UC…）"></div>
+          <div class="field"><label>自动刷新（分钟，0=仅手动）</label><input id="feedRefresh" type="number" min="0" max="1440" placeholder="0"></div>
+          <div class="create-actions">
+            <button class="btn mini" id="feedSettingsCancel" type="button">取消</button>
+            <button class="btn primary mini" id="feedSettingsSubmit" type="button">保存来源</button>
+          </div>
         </div>
         <div class="create-form" id="createFeedForm" hidden>
           <textarea id="createFeedText" maxlength="1000" placeholder="写一条动态，例如今天做了什么、学到了什么"></textarea>
@@ -710,7 +734,7 @@ footer::after{
         </div>
         <div id="feedList"></div>
       </div>
-      <div class="memory" style="padding:2px 4px">动态是面板本地的短记录：手动写、手动删。以后接定时生成时，生成结果也用同一条目格式，不改面板结构。</div>
+      <div class="memory" style="padding:2px 4px">动态面板本地数据：手动写、手动删，也可接 X / YouTube 来源。来源拉取失败只会显示一行提示，不影响手动动态。</div>
     </section>
 
     <!-- 点子：建议卡片，可改状态 -->
@@ -863,6 +887,8 @@ let state = {
   selectedArtId: '2026-10-17',
   artPulse: null,
   feed: { ok: true, posts: [{ id: 'feed-panel-start', text: '动态页签已启用：这里可以手动记录动态，之后可以接定时生成。', source: 'panel', createdAt: 1761254400000 }] },
+  feedSources: { x: { enabled: false, handle: '', keywords: '' }, youtube: { enabled: false, channelId: '', channelUrl: '' }, refreshMinutes: 0 },
+  feedStatus: { ok: false, lastRefreshAt: 0, fetched: 0, errors: [] },
   feedPulse: null,
   ideas: { ok: true, items: [
     { id: 'idea-art-auto', title: '每日回顾自动生成', detail: '每天定时从当天内容提炼一页艺术回顾，而不是手动创建。', status: 'new', createdAt: 1761254400000 },
@@ -1227,24 +1253,52 @@ function fmtDate(ts) {
   const d = new Date(ts);
   return d.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
+const SOURCE_LABEL = { x: 'X', youtube: 'YouTube', manual: '手动', panel: '面板' };
 function renderFeed(s) {
   const list = $('#feedList');
   if (!list) return;
   const posts = (s.feed && Array.isArray(s.feed.posts)) ? s.feed.posts : [];
   $('#feedHint').textContent = posts.length ? posts.length + ' 条' : '';
   list.innerHTML = '';
+
+  // One honest line when a source failed (fail-soft; never blocks the panel).
+  const status = s.feedStatus;
+  if (status && Array.isArray(status.errors) && status.errors.length) {
+    const err = document.createElement('div');
+    err.className = 'memory warn';
+    const why = status.errors.map((e) => `${SOURCE_LABEL[e.source] || e.source}: ${e.reason}`).join('；');
+    err.textContent = `来源拉取未全部成功（${why}）。手动动态不受影响。`;
+    list.appendChild(err);
+  }
+
   if (!posts.length) {
-    list.innerHTML = '<div class="empty">还没有动态，点右上角「写动态」写第一条。</div>';
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = '还没有动态，点右上角「写动态」写第一条，或在「设置」里接 X / YouTube。';
+    list.appendChild(empty);
     return;
   }
   for (const post of posts) {
+    const source = post.source || 'manual';
     const row = document.createElement('div');
     row.className = 'bot';
-    row.innerHTML = `<div class="body"><b>${escapeHtml(post.source || 'manual')}</b><span>${escapeHtml(post.text)}</span><span class="hint">${fmtDate(post.createdAt)}</span></div><button class="btn mini" type="button">删除</button>`;
-    row.querySelector('button').addEventListener('click', () => {
-      if (!window.confirm('确定删除这条动态吗？')) return;
-      post('delete-feed', { feedId: post.id });
-    });
+    const titleHtml = post.link && post.title
+      ? `<a href="${escapeHtml(post.link)}" target="_blank" rel="noopener">${escapeHtml(post.title)}</a>`
+      : (post.title ? escapeHtml(post.title) : '');
+    const summaryHtml = post.summary && post.summary !== post.text ? `<span class="feed-summary">${escapeHtml(post.summary)}</span>` : '';
+    row.innerHTML = `<div class="body"><span class="badge badge-${escapeHtml(source)}">${SOURCE_LABEL[source] || escapeHtml(source)}</span>`
+      + (titleHtml ? `<b>${titleHtml}</b>` : '')
+      + `<span>${escapeHtml(post.text)}</span>${summaryHtml}<span class="hint">${fmtDate(post.createdAt)}</span></div>`
+      + (source === 'manual' || source === 'panel'
+        ? '<button class="btn mini" type="button">删除</button>'
+        : '<button class="btn mini" type="button" disabled title="来源动态只读">来源</button>');
+    const del = row.querySelector('button:not([disabled])');
+    if (del) {
+      del.addEventListener('click', () => {
+        if (!window.confirm('确定删除这条动态吗？')) return;
+        post('delete-feed', { feedId: post.id });
+      });
+    }
     list.appendChild(row);
   }
   if (s.feedPulse && s.feedPulse.line) {
@@ -1746,6 +1800,34 @@ $('#createGoalSubmit')?.addEventListener('click', () => {
   post('create-goal', { title, detail, targetDate: targetDate || null, progress: progressRaw ? Number(progressRaw) : 0 });
   const f = $('#createGoalForm'); if (f) f.hidden = true;
 });
+
+/* ---------- feed sources: settings + refresh ---------- */
+$('#feedSettingsBtn')?.addEventListener('click', () => {
+  const form = $('#feedSettingsForm'); if (!form) return;
+  // Prefill from the latest snapshot.
+  const src = (state && state.feedSources) || {}
+  if ($('#xHandle')) $('#xHandle').value = (src.x && src.x.handle) || ''
+  if ($('#xKeywords')) $('#xKeywords').value = (src.x && src.x.keywords) || ''
+  if ($('#ytChannel')) $('#ytChannel').value = (src.youtube && src.youtube.channelUrl) || (src.youtube && src.youtube.channelId) || ''
+  if ($('#feedRefresh')) $('#feedRefresh').value = (src.refreshMinutes != null) ? src.refreshMinutes : 0
+  form.hidden = !form.hidden
+});
+$('#feedSettingsCancel')?.addEventListener('click', () => { const f = $('#feedSettingsForm'); if (f) f.hidden = true; });
+$('#feedSettingsSubmit')?.addEventListener('click', () => {
+  const handle = ($('#xHandle')?.value || '').trim()
+  const keywords = ($('#xKeywords')?.value || '').trim()
+  const channel = ($('#ytChannel')?.value || '').trim()
+  const refreshRaw = ($('#feedRefresh')?.value || '').trim()
+  const refreshMinutes = refreshRaw === '' ? 0 : Number(refreshRaw)
+  if (refreshMinutes < 0 || !Number.isFinite(refreshMinutes)) { alert('自动刷新需为 0–1440 之间的数字'); return; }
+  post('feed/config', {
+    x: { enabled: !!(handle || keywords), handle, keywords },
+    youtube: { enabled: !!channel, channelUrl: channel },
+    refreshMinutes,
+  })
+  const f = $('#feedSettingsForm'); if (f) f.hidden = true;
+});
+$('#refreshFeedBtn')?.addEventListener('click', () => { post('refresh-feed', {}); });
 
 /* ---------- art board: create a daily-review page ---------- */
 $('#createArtBtn')?.addEventListener('click', () => {
