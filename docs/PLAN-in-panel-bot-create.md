@@ -193,3 +193,64 @@ Panel [绑定到当前 Bot]（IM 渠道卡）
 - ADR-013：编辑 / 删除 / 绑全部经 Cordis `botharness`，**不**直写 `botharness.db`。
 - ADR-012：不引入 nanobot（IM 绑定复用 DSB `externalMessaging`）。
 - 不写密钥 / token：fingerprint 由用户从 DSB 账号准备处粘贴，不落文件明文。
+
+---
+
+## 9. 面板会议 / 日历接线（本次新增，包：panel-meetings）
+
+### 9.1 目标与范围
+
+在面板新增「会议」页：展示今日 / 即将开始的会议（日历源经 DSB），并对单场会议提供
+**加入 / 打开链接 / 会中发消息** 三种动作；DSB 未开日历时显示友好空态，宠物照常工作。
+
+只改本包声明文件：`desktop/panel/index.html`、`desktop/Sources/main.swift`、
+`lib/host/dsb.js`、`lib/host/service.js`、`test/host.test.js`、`docs/PLAN`（本节）。
+未碰 `routes.js` 等共享文件，避免与并行包冲突。
+
+### 9.2 真实 API 核对（先核实再接线）
+
+证据：`~/.dsh/profiles/desktop/node_modules/@botharness/core@1.4.1/dist/index.mjs` 与
+`index.d.mts`，以及 `@botharness/im-provider@4.32.0-botharness.21`。
+
+- `ctx.get('botharness')` 运行时服务暴露：`channels` / `creations` / `registry` /
+  `deletions` / `externalMessaging` / `runtime`。**没有** `calendar` 或 `meetings` 命名空间。
+- `im-provider` 内含 `meetingList` / `joinMeeting` / `MeetingList` 等类，但那是 IM Provider
+  的内部实现，**不在** 宠物可达的 Cordis 服务面上。
+- 结论：本机当前 DSB 没有可供面板调用的「会议 / 日历」Cordis 端点。
+
+依据 brief「API 有什么接什么」，采用**探测式接线**：`resolveMeetingsSource(ctx)` 探测
+`botharness.calendar`（含 `listEvents` / `join` / `open` / `sendMessage`）或回退
+`botharness.meetings`（含 `list`）。探测不到即 `{ok:false, reason:'calendar-source-unavailable'}`，
+面板走空态。**一旦 DSB 日后补上 calendar 能力，无需改面板即可生效**（ADR-011 失败容忍）。
+
+### 9.3 数据流
+
+```
+Panel 会议页 → post('meeting', {action, meetingId, joinUrl?, text?})
+  → main.swift queueCommand("meeting", …)
+  → ~/.dsh/pet-one/commands.json
+  → PetOneService.drainDesktopCommands → this.meetingAction({action, meetingId, text, joinUrl})
+  → meetingAction(ctx, …)  (lib/host/dsb.js)
+  → botharness.calendar.join / open / sendMessage  (Cordis，不直写 DB)
+  → meetingPulse 脉冲 → writeLive → live.json → 面板刷新
+读列表：startMeetingsPolling (15s) → readMeetings(ctx) → botharness.calendar.listEvents({from,to})
+```
+
+### 9.4 面板行为
+
+- 会议卡片：标题 + 时间 + 来源；三个动作钮「加入 / 链接 / 发消息」。
+- 「发消息」用浏览器 `prompt` 取一行文本，经 `meeting` 命令送到 DSB（会中消息）。
+- 空态一：DSB 未开日历 → 提示去 DeepSeek Harness 连日历。
+- 空态二：今日无会议 → 「今天没有会议，享受清静吧」。
+- 最近一次操作通过 `meetingPulse` 显示成功 / 失败行（失败红色）。
+
+### 9.5 约束复核
+
+- ADR-010/012/013：仅经 Cordis `botharness`，禁止 nanobot，禁止直写 `botharness.db`。
+- 失败一律 `{ok:false}` + 友好文案，绝不拖垮宠物。
+- 密钥不进仓 / 日志 / digest / 面板；会议 joinUrl 仅用于「打开链接」动作，不落盘明文。
+
+### 9.6 测试
+
+`test/host.test.js` 新增 8 个用例（dsb 探测 / 降级 / 归一化 / 三动作分发 / 非法输入 /
+service 脉冲 / drain 命令 / view 携带 meetings），全绿。

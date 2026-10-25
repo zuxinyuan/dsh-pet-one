@@ -452,6 +452,113 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.launchLive2D()
             case "close":
                 self.infoPanel.orderOut(nil)
+            case "meeting":
+                if let action = payload["action"] as? String, !action.isEmpty,
+                   let meetingId = payload["meetingId"] as? String, !meetingId.isEmpty {
+                    var extra: [String: Any] = ["action": action, "meetingId": meetingId]
+                    if let joinUrl = payload["joinUrl"] as? String, !joinUrl.isEmpty { extra["joinUrl"] = joinUrl }
+                    if let text = payload["text"] as? String, !text.isEmpty { extra["text"] = text }
+                    self.queueCommand("meeting", extra: extra)
+                    self.showBubble(action == "open" ? "正在打开会议…" : "会议操作已发送…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "create-art":
+                if let date = payload["date"] as? String, !date.isEmpty,
+                   let title = payload["title"] as? String, !title.isEmpty,
+                   let insight = payload["insight"] as? String, !insight.isEmpty {
+                    var extra: [String: Any] = ["date": date, "title": title, "insight": insight]
+                    if let day = payload["day"] as? Int { extra["day"] = day }
+                    if let day = payload["day"] as? Double { extra["day"] = Int(day) }
+                    if let caption = payload["caption"] as? String, !caption.isEmpty { extra["caption"] = caption }
+                    self.queueCommand("create-art", extra: extra)
+                    self.showBubble("正在保存每日回顾…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "select-art":
+                var extra: [String: Any] = [:]
+                if let artId = payload["artId"] as? String, !artId.isEmpty { extra["artId"] = artId }
+                self.queueCommand("select-art", extra: extra)
+                if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+            case "delete-art":
+                if let artId = payload["artId"] as? String, !artId.isEmpty {
+                    self.queueCommand("delete-art", extra: ["artId": artId])
+                    self.showBubble("正在删除每日回顾…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "create-feed":
+                if let text = payload["text"] as? String, !text.isEmpty {
+                    self.queueCommand("create-feed", extra: ["text": text])
+                    self.showBubble("正在发布动态…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "delete-feed":
+                if let feedId = payload["feedId"] as? String, !feedId.isEmpty {
+                    self.queueCommand("delete-feed", extra: ["feedId": feedId])
+                    self.showBubble("正在删除动态…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "create-idea":
+                if let title = payload["title"] as? String, !title.isEmpty {
+                    var extra: [String: Any] = ["title": title]
+                    if let detail = payload["detail"] as? String, !detail.isEmpty { extra["detail"] = detail }
+                    self.queueCommand("create-idea", extra: extra)
+                    self.showBubble("正在保存点子…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "select-idea":
+                var extraIdea: [String: Any] = [:]
+                if let ideaId = payload["ideaId"] as? String, !ideaId.isEmpty { extraIdea["ideaId"] = ideaId }
+                self.queueCommand("select-idea", extra: extraIdea)
+                if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+            case "update-idea":
+                if let ideaId = payload["ideaId"] as? String, !ideaId.isEmpty {
+                    var extra: [String: Any] = ["ideaId": ideaId]
+                    if let status = payload["status"] as? String, !status.isEmpty { extra["status"] = status }
+                    if let title = payload["title"] as? String, !title.isEmpty { extra["title"] = title }
+                    if let detail = payload["detail"] as? String { extra["detail"] = detail }
+                    self.queueCommand("update-idea", extra: extra)
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "delete-idea":
+                if let ideaId = payload["ideaId"] as? String, !ideaId.isEmpty {
+                    self.queueCommand("delete-idea", extra: ["ideaId": ideaId])
+                    self.showBubble("正在删除点子…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "create-goal":
+                if let title = payload["title"] as? String, !title.isEmpty {
+                    var extra: [String: Any] = ["title": title]
+                    if let detail = payload["detail"] as? String, !detail.isEmpty { extra["detail"] = detail }
+                    if let targetDate = payload["targetDate"] as? String, !targetDate.isEmpty { extra["targetDate"] = targetDate }
+                    if let progress = payload["progress"] as? Int { extra["progress"] = progress }
+                    if let progress = payload["progress"] as? Double { extra["progress"] = Int(progress) }
+                    self.queueCommand("create-goal", extra: extra)
+                    self.showBubble("正在保存目标…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "select-goal":
+                var extraGoal: [String: Any] = [:]
+                if let goalId = payload["goalId"] as? String, !goalId.isEmpty { extraGoal["goalId"] = goalId }
+                self.queueCommand("select-goal", extra: extraGoal)
+                if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+            case "update-goal":
+                if let goalId = payload["goalId"] as? String, !goalId.isEmpty {
+                    var extra: [String: Any] = ["goalId": goalId]
+                    if let status = payload["status"] as? String, !status.isEmpty { extra["status"] = status }
+                    if let title = payload["title"] as? String, !title.isEmpty { extra["title"] = title }
+                    if let detail = payload["detail"] as? String { extra["detail"] = detail }
+                    if let targetDate = payload["targetDate"] as? String { extra["targetDate"] = targetDate }
+                    if let progress = payload["progress"] as? Int { extra["progress"] = progress }
+                    if let progress = payload["progress"] as? Double { extra["progress"] = Int(progress) }
+                    self.queueCommand("update-goal", extra: extra)
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
+            case "delete-goal":
+                if let goalId = payload["goalId"] as? String, !goalId.isEmpty {
+                    self.queueCommand("delete-goal", extra: ["goalId": goalId])
+                    self.showBubble("正在删除目标…")
+                    if self.infoPanel.isVisible { self.infoPanel.push(self.panelState()) }
+                }
             case "dsh":
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/DeepSeek Harness.app"))
             default:
@@ -1025,6 +1132,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "botCreate": snapshot["botCreate"] as? [String: Any] ?? NSNull(),
             "botBridge": snapshot["botBridge"] as? [String: Any] ?? ["ok": false],
             "selectedBotSlug": snapshot["selectedBotSlug"] as? String ?? NSNull(),
+            "meetings": snapshot["meetings"] as? [String: Any] ?? ["ok": false, "meetings": []],
+            "meetingPulse": snapshot["meetingPulse"] as? [String: Any] ?? NSNull(),
+            "art": snapshot["art"] as? [String: Any] ?? ["ok": true, "pages": []],
+            "artPulse": snapshot["artPulse"] as? [String: Any] ?? NSNull(),
+            "selectedArtId": snapshot["selectedArtId"] as? String ?? NSNull(),
+            "feed": snapshot["feed"] as? [String: Any] ?? ["ok": true, "posts": []],
+            "feedPulse": snapshot["feedPulse"] as? [String: Any] ?? NSNull(),
+            "ideas": snapshot["ideas"] as? [String: Any] ?? ["ok": true, "items": []],
+            "ideaPulse": snapshot["ideaPulse"] as? [String: Any] ?? NSNull(),
+            "selectedIdeaId": snapshot["selectedIdeaId"] as? String ?? NSNull(),
+            "goals": snapshot["goals"] as? [String: Any] ?? ["ok": true, "items": []],
+            "goalPulse": snapshot["goalPulse"] as? [String: Any] ?? NSNull(),
+            "selectedGoalId": snapshot["selectedGoalId"] as? String ?? NSNull(),
         ]
     }
 

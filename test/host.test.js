@@ -16,7 +16,7 @@ import { ActivityTracker, projectEvent, emptyRuntime } from '../lib/host/activit
 import { interact, rewardTurn, rankOf } from '../lib/host/economy.js'
 import { createSkinRegistry } from '../lib/host/skins.js'
 import { PetOneService } from '../lib/host/service.js'
-import { updatePersonaBot, deletePersonaBot, bindImChannel } from '../lib/host/dsb.js'
+import { updatePersonaBot, deletePersonaBot, bindImChannel, resolveMeetingsSource, readMeetings, meetingAction } from '../lib/host/dsb.js'
 import { makeRoutes } from '../lib/host/routes.js'
 import { loadQuestGuide, normalizeCard, validateCard, DEFAULT_CARD } from '../lib/host/quest-guide.js'
 
@@ -918,3 +918,227 @@ test('quest-guide service exposes the guide in view(), live.json and the HTTP ro
   await new Promise((resolve) => server.close(resolve))
 })
 
+/* ---------- 会议 / 日历（面板会议包） ---------- */
+
+test('resolveMeetingsSource returns null without a calendar capability', () => {
+  assert.equal(resolveMeetingsSource({ get: () => undefined }), null)
+  assert.equal(resolveMeetingsSource({ get: () => ({}) }), null)
+  // botharness present but no calendar/meetings namespace
+  assert.equal(resolveMeetingsSource({ get: (n) => (n === 'botharness' ? { creations: {} } : undefined) }), null)
+})
+
+test('readMeetings degrades to ok:false when DSB calendar is absent', async () => {
+  const snap = await readMeetings({ get: () => undefined })
+  assert.equal(snap.ok, false)
+  assert.equal(snap.reason, 'calendar-source-unavailable')
+  assert.deepEqual(snap.meetings, [])
+})
+
+test('readMeetings normalizes a calendar.listEvents payload', async () => {
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return {
+        calendar: {
+          listEvents: async ({ from, to }) => {
+            assert.ok(typeof from === 'string' && typeof to === 'string')
+            return [
+              { id: 'm1', title: '站会', startAt: '2026-10-24T09:30:00Z', provider: 'google', joinUrl: 'https://meet/x' },
+              { id: 'm2', summary: '需求评审', startTime: '2026-10-24T14:00:00Z' },
+              { notAnEvent: true },
+            ]
+          },
+        },
+      }
+    },
+  }
+  const snap = await readMeetings(ctx)
+  assert.equal(snap.ok, true)
+  assert.equal(snap.meetings.length, 2)
+  assert.equal(snap.meetings[0].id, 'm1')
+  assert.equal(snap.meetings[0].title, '站会')
+  assert.equal(snap.meetings[0].joinUrl, 'https://meet/x')
+  assert.equal(snap.meetings[1].title, '需求评审')
+  assert.equal(snap.meetings[1].startAt, '2026-10-24T14:00:00Z')
+  // sorted by startAt
+  assert.ok(snap.meetings[0].startAt < snap.meetings[1].startAt)
+})
+
+test('meetingAction join/open/message dispatch to the calendar capability', async () => {
+  const seen = []
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return {
+        calendar: {
+          listEvents: async () => [],
+          join: async (id) => { seen.push(['join', id]); return { ok: true } },
+          open: async (id) => { seen.push(['open', id]); return { joinUrl: 'https://meet/open' } },
+          sendMessage: async (id, text) => { seen.push(['message', id, text]); return { ok: true } },
+        },
+      }
+    },
+  }
+  const join = await meetingAction(ctx, { action: 'join', meetingId: 'm1' })
+  assert.equal(join.ok, true)
+  const open = await meetingAction(ctx, { action: 'open', meetingId: 'm2' })
+  assert.equal(open.ok, true)
+  assert.equal(open.joinUrl, 'https://meet/open')
+  const msg = await meetingAction(ctx, { action: 'message', meetingId: 'm1', text: '我晚两分钟' })
+  assert.equal(msg.ok, true)
+  assert.deepEqual(seen, [['join', 'm1'], ['open', 'm2'], ['message', 'm1', '我晚两分钟']])
+})
+
+test('meetingAction rejects unknown action / empty id / empty text / missing source', async () => {
+  assert.equal((await meetingAction({ get: () => undefined }, { action: 'join', meetingId: 'm1' })).reason, 'calendar-source-unavailable')
+  assert.equal((await meetingAction({ get: () => ({}) }, { action: 'join', meetingId: '' })).reason, 'empty-meeting-id')
+  assert.equal((await meetingAction({ get: () => ({}) }, { action: 'frobnicate', meetingId: 'm1' })).reason, 'unknown-action')
+  const ctx = {
+    get(name) {
+      if (name !== 'botharness') return undefined
+      return { calendar: { listEvents: async () => [], sendMessage: async () => ({ ok: true }) } }
+    },
+  }
+  assert.equal((await meetingAction(ctx, { action: 'message', meetingId: 'm1', text: '  ' })).reason, 'empty-text')
+})
+
+test('service meetingAction reports a friendly pulse when DSB calendar is absent', async () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  service.ctx = { get: () => undefined }
+  const result = await service.meetingAction({ action: 'join', meetingId: 'm1' })
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'calendar-source-unavailable')
+  const view = service.view()
+  assert.equal(view.meetingPulse.ok, false)
+  assert.match(view.meetingPulse.line, /DSB|日历/)
+  service.close()
+})
+
+test('meeting desktop command drains into meetingAction', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  let called = null
+  service.meetingAction = (input) => { called = input; return { ok: true, pending: true } }
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'meeting', action: 'open', meetingId: 'm9', joinUrl: 'https://x/y' }]))
+  service.drainDesktopCommands()
+  assert.deepEqual(called, { action: 'open', meetingId: 'm9', text: undefined, joinUrl: 'https://x/y' })
+  service.close()
+})
+
+test('pet view always carries a meetings field', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  const view = service.view()
+  assert.ok(view.meetings !== undefined)
+  assert.equal(typeof view.meetings.ok, 'boolean')
+  assert.ok(Array.isArray(view.meetings.meetings))
+  service.close()
+})
+
+test('art board normalizes, seeds Day 8 and renders a standalone page', async () => {
+  const { normalizeArtPage, normalizeArtPages, renderArtPageHtml, seedArtPage } = await import('../lib/host/art.js')
+  const seed = seedArtPage()
+  assert.equal(seed.date, '2026-10-17')
+  assert.equal(seed.day, 8)
+  assert.match(seed.insight, /one-sided limits exist and are finite/)
+  assert.equal(normalizeArtPage({ date: 'bad', title: 'x', insight: 'y' }), null)
+  assert.equal(normalizeArtPage({ date: '2026-10-18', title: '', insight: 'y' }), null)
+  const pages = normalizeArtPages([seed, { date: '2026-10-18', day: 9, title: 'Next', insight: 'next insight', caption: 'cap' }])
+  assert.equal(pages[0].date, '2026-10-18')
+  assert.equal(pages[1].date, '2026-10-17')
+  const html = renderArtPageHtml(seed)
+  assert.match(html, /Discontinuity/)
+  assert.match(html, /Two sides, two different answers/)
+  assert.match(html, /<svg/)
+})
+
+test('service art board creates, selects and deletes pages via desktop commands', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  // Seeded Day 8 example is present on first run.
+  let view = service.view()
+  assert.equal(view.art.pages[0].id, '2026-10-17')
+  assert.equal(view.selectedArtId, '2026-10-17')
+  const created = service.createArtPage({ date: '2026-10-18', day: 9, title: 'Next Cut', insight: 'next insight', caption: 'next caption' })
+  assert.equal(created.ok, true)
+  assert.match(created.html, /Next Cut/)
+  view = service.view()
+  assert.equal(view.art.pages[0].id, '2026-10-18')
+  assert.equal(view.selectedArtId, '2026-10-18')
+  // Desktop command path: select back, then delete the new page.
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'select-art', artId: '2026-10-17' }]))
+  service.drainDesktopCommands()
+  assert.equal(service.view().selectedArtId, '2026-10-17')
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'delete-art', artId: '2026-10-18' }]))
+  service.drainDesktopCommands()
+  assert.equal(service.view().art.pages.length, 1)
+  assert.equal(service.view().art.pages[0].id, '2026-10-17')
+  service.close()
+})
+
+test('feed, ideas and goals normalize, seed and sort newest first', async () => {
+  const { normalizeFeedPost, normalizeFeedPosts, seedFeedPost } = await import('../lib/host/feed.js')
+  const { normalizeIdea, normalizeIdeas, seedIdeas } = await import('../lib/host/ideas.js')
+  const { normalizeGoal, normalizeGoals, seedGoals } = await import('../lib/host/goals.js')
+  assert.equal(seedFeedPost().source, 'panel')
+  assert.equal(normalizeFeedPost({ text: '' }), null)
+  assert.equal(normalizeFeedPosts([{ text: 'b', createdAt: 2 }, { text: 'a', createdAt: 1 }])[0].text, 'b')
+  assert.equal(seedIdeas().length, 2)
+  assert.equal(seedIdeas()[0].id, 'idea-art-auto')
+  assert.equal(normalizeIdea({ title: '', detail: 'x' }), null)
+  assert.equal(normalizeIdea({ title: 't', status: 'bogus' }).status, 'new')
+  assert.equal(normalizeIdeas([{ title: 'b', createdAt: 2 }, { title: 'a', createdAt: 1 }])[0].title, 'b')
+  assert.equal(seedGoals()[0].id, 'goal-example')
+  assert.equal(normalizeGoal({ title: '' }), null)
+  assert.equal(normalizeGoal({ title: 't', progress: 150 }).progress, 100)
+  assert.equal(normalizeGoal({ title: 't', progress: -5 }).progress, 0)
+  assert.equal(normalizeGoal({ title: 't', targetDate: 'bad' }).targetDate, null)
+  assert.equal(normalizeGoal({ title: 't', targetDate: '2026-12-31' }).targetDate, '2026-12-31')
+})
+
+test('service feed, ideas and goals create, update, select and delete via desktop commands', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  // First-run seeds are present.
+  let view = service.view()
+  assert.equal(view.feed.posts[0].id, 'feed-panel-start')
+  assert.equal(view.ideas.items.length, 2)
+  assert.equal(view.selectedIdeaId, 'idea-art-auto')
+  assert.equal(view.goals.items[0].id, 'goal-example')
+  assert.equal(view.selectedGoalId, 'goal-example')
+  // Feed: create then delete via desktop command.
+  const post = service.createFeedPost({ text: 'hello feed' })
+  assert.equal(post.ok, true)
+  assert.equal(service.view().feed.posts[0].text, 'hello feed')
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'delete-feed', feedId: post.post.id }]))
+  service.drainDesktopCommands()
+  assert.equal(service.view().feed.posts.some((p) => p.id === post.post.id), false)
+  // Ideas: create, move status via desktop command, select, delete.
+  const idea = service.createIdea({ title: 'Try this', detail: 'detail' })
+  assert.equal(idea.ok, true)
+  assert.equal(service.view().selectedIdeaId, idea.idea.id)
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'update-idea', ideaId: idea.idea.id, status: 'trying' }]))
+  service.drainDesktopCommands()
+  assert.equal(service.view().ideas.items.find((i) => i.id === idea.idea.id).status, 'trying')
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'select-idea', ideaId: 'idea-art-auto' }]))
+  service.drainDesktopCommands()
+  assert.equal(service.view().selectedIdeaId, 'idea-art-auto')
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'delete-idea', ideaId: idea.idea.id }]))
+  service.drainDesktopCommands()
+  assert.equal(service.view().ideas.items.some((i) => i.id === idea.idea.id), false)
+  // Goals: create, update progress via desktop command, select, delete.
+  const goal = service.createGoal({ title: 'Read a book', targetDate: '2026-12-31' })
+  assert.equal(goal.ok, true)
+  assert.equal(service.view().selectedGoalId, goal.goal.id)
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'update-goal', goalId: goal.goal.id, progress: 40 }]))
+  service.drainDesktopCommands()
+  assert.equal(service.view().goals.items.find((g) => g.id === goal.goal.id).progress, 40)
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'select-goal', goalId: 'goal-example' }]))
+  service.drainDesktopCommands()
+  assert.equal(service.view().selectedGoalId, 'goal-example')
+  writeFileSync(join(dir, 'commands.json'), JSON.stringify([{ kind: 'delete-goal', goalId: goal.goal.id }]))
+  service.drainDesktopCommands()
+  assert.equal(service.view().goals.items.some((g) => g.id === goal.goal.id), false)
+  service.close()
+})
