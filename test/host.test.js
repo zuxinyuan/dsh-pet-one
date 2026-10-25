@@ -1142,3 +1142,135 @@ test('service feed, ideas and goals create, update, select and delete via deskto
   assert.equal(service.view().goals.items.some((g) => g.id === goal.goal.id), false)
   service.close()
 })
+
+/* ---------- feed sources (X + YouTube) ---------- */
+
+test('normalizeFeedSourceConfig sanitizes and never keeps secrets', async () => {
+  const { normalizeFeedSourceConfig } = await import('../lib/host/feed-sources.js')
+  const cfg = normalizeFeedSourceConfig({
+    x: { enabled: true, handle: '@elonmusk ', keywords: 'ai' },
+    youtube: { enabled: true, channelUrl: 'https://www.youtube.com/channel/UC1234567890abcdefghijkl' },
+    refreshMinutes: '15',
+  })
+  assert.equal(cfg.x.handle, 'elonmusk')
+  assert.equal(cfg.x.keywords, 'ai')
+  assert.equal(cfg.x.enabled, true)
+  assert.equal(cfg.youtube.channelId, 'UC1234567890abcdefghijkl')
+  assert.equal(cfg.refreshMinutes, 15)
+  // out-of-range + junk clamped
+  assert.equal(normalizeFeedSourceConfig({ refreshMinutes: 99999 }).refreshMinutes, 1440)
+  assert.equal(normalizeFeedSourceConfig({ x: { handle: '   ' } }).x.enabled, false)
+})
+
+test('fetchYouTube parses the public Atom feed without a key', async () => {
+  const { fetchYouTube } = await import('../lib/host/feed-sources.js')
+  const xml = `<?xml version="1.0"?><feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/">
+    <entry>
+      <id>yt:video:AAA111</id>
+      <title>Hello World</title>
+      <published>2026-10-01T10:00:00Z</published>
+      <link rel="alternate" href="https://www.youtube.com/watch?v=AAA111"/>
+      <media:group><media:description>A short summary.</media:description></media:group>
+    </entry>
+    <entry><id>yt:video:BBB222</id><title>Second</title><published>2026-10-02T10:00:00Z</published><link rel="alternate" href="https://www.youtube.com/watch?v=BBB222"/></entry>
+  </feed>`
+  const fetchImpl = async () => ({ ok: true, text: async () => xml })
+  const r = await fetchYouTube('UC1234567890abcdefghijkl', { fetchImpl })
+  assert.equal(r.ok, true)
+  assert.equal(r.posts.length, 2)
+  assert.equal(r.posts[0].id, 'youtube:BBB222') // newest first
+  assert.equal(r.posts[0].source, 'youtube')
+  assert.equal(r.posts[0].title, 'Second')
+  assert.equal(r.posts[0].link, 'https://www.youtube.com/watch?v=BBB222')
+  assert.equal(r.posts[1].summary, 'A short summary.')
+  // missing channel id fails soft
+  const bad = await fetchYouTube('', { fetchImpl })
+  assert.equal(bad.ok, false)
+  assert.equal(bad.reason, 'no-channel')
+})
+
+test('fetchX uses a user-supplied RSS base and fails soft without one', async () => {
+  const { fetchX } = await import('../lib/host/feed-sources.js')
+  const xml = `<rss version="2.0"><channel>
+    <item><title>tweet</title><link>https://x.com/acct/status/12345</link><description>body text</description><pubDate>Wed, 01 Oct 2026 10:00:00 GMT</pubDate></item>
+  </channel></rss>`
+  const fetchImpl = async () => ({ ok: true, text: async () => xml })
+  const r = await fetchX({ handle: 'acct' }, { fetchImpl, xRssBase: 'https://rsshub.example/x/user' })
+  assert.equal(r.ok, true)
+  assert.equal(r.posts.length, 1)
+  assert.equal(r.posts[0].id, 'x:12345')
+  assert.equal(r.posts[0].source, 'x')
+  assert.equal(r.posts[0].link, 'https://x.com/acct/status/12345')
+  // no base configured => fail soft, no thrown error, no secret
+  const none = await fetchX({ handle: 'acct' }, { fetchImpl })
+  assert.equal(none.ok, false)
+  assert.equal(none.reason, 'not-configured')
+})
+
+test('fetchAllSources is fail-soft per source', async () => {
+  const { fetchAllSources } = await import('../lib/host/feed-sources.js')
+  const xml = '<rss version="2.0"><channel><item><title>t</title><link>https://x.com/a/status/999</link><description>d</description><pubDate>Wed, 01 Oct 2026 10:00:00 GMT</pubDate></item></channel></rss>'
+  const fetchImpl = async (url) => {
+    if (url.includes('youtube.com')) return { ok: false, status: 500, text: async () => '' }
+    return { ok: true, text: async () => xml }
+  }
+  const result = await fetchAllSources(
+    { x: { enabled: true, handle: 'a' }, youtube: { enabled: true, channelId: 'UC1234567890abcdefghijkl' }, refreshMinutes: 0 },
+    { fetchImpl, xRssBase: 'https://rsshub.example/x/user' },
+  )
+  assert.equal(result.ok, false)
+  assert.equal(result.posts.length, 1)
+  assert.equal(result.errors.length, 1)
+  assert.equal(result.errors[0].source, 'youtube')
+})
+
+test('store persists feedSources and feedStatus', () => {
+  const dir = tempDir()
+  const store = new Store(dir)
+  store.get().feedSources = { x: { enabled: true, handle: 'bob', keywords: '' }, youtube: { enabled: false, channelId: '', channelUrl: '' }, refreshMinutes: 30 }
+  store.get().feedStatus = { ok: true, lastRefreshAt: 123, fetched: 5, errors: [] }
+  store.close()
+  const reopened = new Store(dir)
+  assert.equal(reopened.get().feedSources.x.handle, 'bob')
+  assert.equal(reopened.get().feedSources.refreshMinutes, 30)
+  assert.equal(reopened.get().feedStatus.fetched, 5)
+  reopened.close()
+})
+
+test('service refreshFeedSources merges source posts and dedupes manual', async () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  // manual post stays
+  service.createFeedPost({ text: 'manual note', source: 'manual' })
+  service.configureFeedSources({ x: { enabled: true, handle: 'a' }, refreshMinutes: 0 })
+  const xml = '<rss version="2.0"><channel><item><title>t</title><link>https://x.com/a/status/777</link><description>d</description><pubDate>Wed, 01 Oct 2026 10:00:00 GMT</pubDate></item></channel></rss>'
+  const fetchImpl = async () => ({ ok: true, text: async () => xml })
+  const r = await service.refreshFeedSources({ fetchImpl, xRssBase: 'https://rsshub.example/x/user' })
+  assert.equal(r.ok, true)
+  assert.equal(r.fetched, 1)
+  const view = service.view()
+  assert.equal(view.feed.posts.some((p) => p.id === 'x:777'), true)
+  assert.equal(view.feed.posts.some((p) => p.source === 'manual'), true)
+  // second refresh upserts (no duplicate)
+  await service.refreshFeedSources({ fetchImpl, xRssBase: 'https://rsshub.example/x/user' })
+  assert.equal(service.view().feed.posts.filter((p) => p.id === 'x:777').length, 1)
+  service.close()
+})
+
+test('configureFeedSources saves config and exposes it in the view', () => {
+  const dir = tempDir()
+  const service = new PetOneService({ env: {}, dir })
+  const r = service.configureFeedSources({
+    x: { enabled: true, handle: 'neo' },
+    youtube: { enabled: true, channelUrl: 'https://www.youtube.com/channel/UC1234567890abcdefghijzz' },
+    refreshMinutes: 20,
+  })
+  assert.equal(r.ok, true)
+  assert.equal(r.sources.x.handle, 'neo')
+  assert.equal(r.sources.youtube.channelId, 'UC1234567890abcdefghijzz')
+  assert.equal(r.sources.refreshMinutes, 20)
+  const view = service.view()
+  assert.equal(view.feedSources.x.handle, 'neo')
+  assert.equal(view.feedStatus.ok, false)
+  service.close()
+})
